@@ -96,9 +96,9 @@ pub fn tool_definitions() -> Vec<Value> {
         tool(
             "command_batch",
             "Run several commands",
-            "Run steps in order; each edit is its own undo step. A param string that is exactly \"$N.path\" (N: 0-based step index) or \"$last.path\" takes that value from an earlier step's result, e.g. {\"id\":\"$1.id\"}; \"$$\" starts a literal \"$\". Returns completed, failed and results. Stops on the first error by default.",
+            "Run steps in order; each edit is its own undo step. A param string that is exactly \"$N.path\" (N: 0-based step index) or \"$last.path\" takes that value from an earlier step's result, e.g. {\"id\":\"$1.id\"}; \"$$\" starts a literal \"$\". Returns completed, failed and results. Stops on the first error by default. With atomic: true the steps are ONE undo step and a failing step rolls them all back (the fastest way to draw: send a whole drawing at once); label names that undo step.",
             obj(
-                json!({"steps": {"type":"array", "items":obj(json!({"id":string("Command id"),"params":{"type":"object"}}), &["id"])}, "stop_on_error":{"type":"boolean", "default":true}}),
+                json!({"steps": {"type":"array", "items":obj(json!({"id":string("Command id"),"params":{"type":"object"}}), &["id"])}, "stop_on_error":{"type":"boolean", "default":true}, "atomic":{"type":"boolean", "default":false}, "label":string("Undo label (atomic)")}),
                 &["steps"],
             ),
             false,
@@ -113,8 +113,11 @@ pub fn tool_definitions() -> Vec<Value> {
         tool(
             "render_preview",
             "Render a preview",
-            "Render the first artboard as inline PNG without changing the document. max_side defaults to 1024, limited to 1..4096.",
-            obj(json!({"max_side":{"type":"integer","minimum":1,"maximum":4096}}), &[]),
+            "Render as inline PNG without changing the document: the first artboard, or just the objects `ids` (their bounds plus a margin), or `rect` [x, y, width, height]; `doc` renders another open document (document.list). max_side defaults to 1024, limited to 1..4096. A small render (max_side 256) of what you just drew is the cheap way to check it.",
+            obj(
+                json!({"max_side":{"type":"integer","minimum":1,"maximum":4096}, "ids":{"type":"array","items":{"type":"integer"}}, "rect":{"type":"array","items":{"type":"number"},"minItems":4,"maxItems":4}, "doc":{"type":"integer"}}),
+                &[],
+            ),
             true,
         ),
         tool("ui_inspect", "Inspect the interface", "Inspect the connected desktop interface; returns a tool error in headless mode.", empty(), true),
@@ -894,6 +897,9 @@ pub fn call_tool(b: &mut dyn Backend, name: &str, args: &Value) -> ToolResult {
 
 fn command_batch(b: &mut dyn Backend, a: &Args) -> Result<ToolResult, String> {
     let steps = a.get("steps").and_then(Value::as_array).ok_or("`steps` must be an array")?;
+    if a.get("atomic").and_then(Value::as_bool) == Some(true) {
+        return command_batch_atomic(b, a, steps);
+    }
     let stop = match a.get("stop_on_error") {
         None => true,
         Some(v) => v.as_bool().ok_or("`stop_on_error` must be a boolean")?,
@@ -937,25 +943,54 @@ fn command_batch(b: &mut dyn Backend, a: &Args) -> Result<ToolResult, String> {
     Ok(r)
 }
 
+/// `atomic: true`: the engine's `command.batch` runs the steps as one undo step and rolls them all
+/// back when one fails (references resolve there, against the steps run so far).
+fn command_batch_atomic(b: &mut dyn Backend, a: &Args, steps: &[Value]) -> Result<ToolResult, String> {
+    let mut commands = Vec::with_capacity(steps.len());
+    for step in steps {
+        let args = step.as_object().ok_or("each step must be an object")?;
+        if args.keys().any(|k| k != "id" && k != "params") {
+            return Err("unknown step argument (expected id, params)".into());
+        }
+        let params = match args.get("params") {
+            None | Some(Value::Null) => json!({}),
+            Some(v @ Value::Object(_)) => v.clone(),
+            Some(_) => return Err("`params` must be an object".into()),
+        };
+        commands.push(json!({"command": req_str(args, "id")?, "params": params}));
+    }
+    let mut params = json!({"commands": commands});
+    if let Some(l) = a.get("label").and_then(Value::as_str) {
+        params["label"] = json!(l);
+    }
+    let n = steps.len();
+    Ok(match b.call("engine.execute", json!({"command": "command.batch", "params": params})) {
+        Ok(v) => {
+            let results: Vec<Value> =
+                v["results"].as_array().cloned().unwrap_or_default().into_iter().map(|r| json!({"ok": true, "result": r})).collect();
+            ToolResult::json(&json!({"completed": n, "failed": 0, "results": results}))
+        }
+        Err(e) => {
+            let mut r = ToolResult::json(&json!({"completed": 0, "failed": 1, "rolledBack": true, "error": e}));
+            r.is_error = true;
+            r
+        }
+    })
+}
+
 fn render_preview(b: &mut dyn Backend, a: &Args) -> Result<ToolResult, String> {
     let max = match a.get("max_side") {
         None => 1024,
         Some(v) => v.as_u64().filter(|v| (1..=4096).contains(v)).ok_or("`max_side` must be an integer in 1..4096")?,
     };
-    let doc = b.call("document.inspect", json!({"depth":0}))?;
-    let board = doc.get("artboards").and_then(Value::as_array).and_then(|v| v.first()).ok_or("no such artboard")?;
-    let width = board.get("width").and_then(Value::as_f64).ok_or("artboard has no width")?;
-    let height = board.get("height").and_then(Value::as_f64).ok_or("artboard has no height")?;
-    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
-        return Err("invalid artboard dimensions".into());
+    // The engine fits the area into the size (at least 8 px a side), then it's thumbnailed down.
+    let mut req = json!({"maxSize": max.max(8)});
+    for key in ["ids", "rect", "doc"] {
+        if let Some(v) = a.get(key) {
+            req[key] = v.clone();
+        }
     }
-    // The headless renderer clamps scale at 0.01. Bound its allocation even for
-    // a huge artboard, then downsize to the requested dimensions.
-    let scale = (max as f64 / width.max(height)).clamp(0.01, 1.0);
-    if width.max(height) * scale > 4096.0 {
-        return Err("artboard is too large for a bounded preview".into());
-    }
-    let r = b.call("ui.render", json!({"scale":scale}))?;
+    let r = b.call("ui.render", req)?;
     let encoded = r.get("pngBase64").and_then(Value::as_str).ok_or("renderer returned no image")?;
     let png = vectorcraft_format::base64_decode(encoded).ok_or("renderer returned bad base64")?;
     let img = image::load_from_memory_with_format(&png, image::ImageFormat::Png).map_err(|e| format!("read preview: {e}"))?;

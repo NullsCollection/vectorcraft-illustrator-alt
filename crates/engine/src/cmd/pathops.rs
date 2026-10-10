@@ -22,97 +22,97 @@ pub fn specs() -> Vec<CommandSpec> {
             "Unite",
             ["Window", "Pathfinder"],
             None,
-            "{} operate on the selected objects (back → front) → {ids}",
+            "{ids?: [id…] (default: the selection)} operate on the selected objects (back → front) → {ids}",
             has_selection,
-            |s, _| run_pf(s, PathfinderOp::Unite)
+            |s, p| run_pf(s, p, PathfinderOp::Unite)
         ),
         cmd!(
             "object.pathfinder.minusFront",
             "Minus Front",
             ["Window", "Pathfinder"],
             None,
-            "{} operate on the selected objects (back → front) → {ids}",
+            "{ids?: [id…] (default: the selection)} operate on the selected objects (back → front) → {ids}",
             has_selection,
-            |s, _| run_pf(s, PathfinderOp::MinusFront)
+            |s, p| run_pf(s, p, PathfinderOp::MinusFront)
         ),
         cmd!(
             "object.pathfinder.intersect",
             "Intersect",
             ["Window", "Pathfinder"],
             None,
-            "{} operate on the selected objects (back → front) → {ids}",
+            "{ids?: [id…] (default: the selection)} operate on the selected objects (back → front) → {ids}",
             has_selection,
-            |s, _| run_pf(s, PathfinderOp::Intersect)
+            |s, p| run_pf(s, p, PathfinderOp::Intersect)
         ),
         cmd!(
             "object.pathfinder.exclude",
             "Exclude",
             ["Window", "Pathfinder"],
             None,
-            "{} operate on the selected objects (back → front) → {ids}",
+            "{ids?: [id…] (default: the selection)} operate on the selected objects (back → front) → {ids}",
             has_selection,
-            |s, _| run_pf(s, PathfinderOp::Exclude)
+            |s, p| run_pf(s, p, PathfinderOp::Exclude)
         ),
         cmd!(
             "object.pathfinder.divide",
             "Divide",
             ["Window", "Pathfinder"],
             None,
-            "{} operate on the selected objects (back → front) → {ids}",
+            "{ids?: [id…] (default: the selection)} operate on the selected objects (back → front) → {ids}",
             has_selection,
-            |s, _| run_pf(s, PathfinderOp::Divide)
+            |s, p| run_pf(s, p, PathfinderOp::Divide)
         ),
         cmd!(
             "object.pathfinder.trim",
             "Trim",
             ["Window", "Pathfinder"],
             None,
-            "{} operate on the selected objects (back → front) → {ids}",
+            "{ids?: [id…] (default: the selection)} operate on the selected objects (back → front) → {ids}",
             has_selection,
-            |s, _| run_pf(s, PathfinderOp::Trim)
+            |s, p| run_pf(s, p, PathfinderOp::Trim)
         ),
         cmd!(
             "object.pathfinder.merge",
             "Merge",
             ["Window", "Pathfinder"],
             None,
-            "{} operate on the selected objects (back → front) → {ids}",
+            "{ids?: [id…] (default: the selection)} operate on the selected objects (back → front) → {ids}",
             has_selection,
-            |s, _| run_pf(s, PathfinderOp::Merge)
+            |s, p| run_pf(s, p, PathfinderOp::Merge)
         ),
         cmd!(
             "object.pathfinder.crop",
             "Crop",
             ["Window", "Pathfinder"],
             None,
-            "{} operate on the selected objects (back → front) → {ids}",
+            "{ids?: [id…] (default: the selection)} operate on the selected objects (back → front) → {ids}",
             has_multi,
-            |s, _| run_pf(s, PathfinderOp::Crop)
+            |s, p| run_pf(s, p, PathfinderOp::Crop)
         ),
         cmd!(
             "object.pathfinder.outline",
             "Outline",
             ["Window", "Pathfinder"],
             None,
-            "{} operate on the selected objects (back → front) → {ids}",
+            "{ids?: [id…] (default: the selection)} operate on the selected objects (back → front) → {ids}",
             has_selection,
-            |s, _| run_pf(s, PathfinderOp::Outline)
+            |s, p| run_pf(s, p, PathfinderOp::Outline)
         ),
         cmd!(
             "object.pathfinder.minusBack",
             "Minus Back",
             ["Window", "Pathfinder"],
             None,
-            "{} operate on the selected objects (back → front) → {ids}",
+            "{ids?: [id…] (default: the selection)} operate on the selected objects (back → front) → {ids}",
             has_selection,
-            |s, _| run_pf(s, PathfinderOp::MinusBack)
+            |s, p| run_pf(s, p, PathfinderOp::MinusBack)
         ),
         cmd!(
             "object.path.outlineStroke",
             "Outline Stroke",
             ["Object", "Path"],
             None,
-            "{} replace stroked paths with filled outlines → {ids}",
+            "{ids?: [id…] (default: the selection)} replace stroked paths with filled outlines → {ids}",
             has_selection,
             outline_stroke
         ),
@@ -121,7 +121,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Offset Path…",
             ["Object", "Path"],
             None,
-            "{offset: pt (negative insets), joins?: \"miter\"|\"round\"|\"bevel\", miterLimit?: 4} → {ids} (new objects above the originals)",
+            "{ids?: [id…] (default: the selection), offset: pt (negative insets), joins?: \"miter\"|\"round\"|\"bevel\", miterLimit?: 4} → {ids} (new objects above the originals)",
             has_selection,
             offset_path
         ),
@@ -303,8 +303,8 @@ fn pf_label(op: PathfinderOp) -> &'static str {
     }
 }
 
-fn run_pf(s: &mut Session, op: PathfinderOp) -> Result<Value> {
-    let roots = selected_roots(s)?;
+fn run_pf(s: &mut Session, p: &Value, op: PathfinderOp) -> Result<Value> {
+    let roots = super::edit::targets(s, p)?;
     let Some(&top) = roots.last() else { return Err(EngineError::Other("nothing selected".into())) };
     let shape_mode =
         matches!(op, PathfinderOp::Unite | PathfinderOp::MinusFront | PathfinderOp::Intersect | PathfinderOp::Exclude | PathfinderOp::MinusBack);
@@ -412,7 +412,7 @@ fn offset_path(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let join = join_param(p, "joins");
     let miter = num_param(p, "miterLimit").unwrap_or(4.0).clamp(1.0, 500.0);
-    let roots = selected_roots(s)?;
+    let roots = super::edit::targets(s, p)?;
     let ids = s.edit("Offset Path", |d, sel| {
         let mut out = vec![];
         for id in &roots {
@@ -606,8 +606,8 @@ pub(crate) fn replace_leaves(d: &mut Document, root: NodeId, mut f: impl FnMut(&
     Ok((replacement, changed))
 }
 
-fn outline_stroke(s: &mut Session, _: &Value) -> Result<Value> {
-    let roots = selected_roots(s)?;
+fn outline_stroke(s: &mut Session, p: &Value) -> Result<Value> {
+    let roots = super::edit::targets(s, p)?;
     let ids = s.edit("Outline Stroke", |d, sel| {
         let brushes = vectorcraft_brush::library(d);
         let mut new_sel = vec![];

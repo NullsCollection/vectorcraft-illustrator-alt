@@ -2409,6 +2409,8 @@
 	Select an image to see its Link Info.	Выберите изображение, чтобы увидеть сведения о связи.
 	Select an image to trace	Выберите изображение для трассировки
 	Select Anchors	Выделить опорные точки
+	List Documents	Список документов
+	Document Summary	Сводка документа
 	Select Appearance Item	Выделить элемент оформления
 	Select Art	Выделить рисунок
 	Select art and choose Object › Pattern › Make.	Выделите рисунок и выберите «Объект › Узор › Создать».
@@ -3825,3 +3827,14 @@ axis	Both	Оба
 @msg	`{text}`: step {i}'s result has no such value (write $$ for a literal $)	`{text}`: в результате шага {i} нет такого значения (чтобы написать сам $, введите $$)
 @msg	`{text}`: there is no step {i} before this one (steps count from 0; write $$ for a literal $)	`{text}`: перед этим шагом нет шага {i} (шаги считаются с 0; чтобы написать сам $, введите $$)
 @msg	object ids are non-negative integers, not {v}	идентификаторы объектов — неотрицательные целые числа, а не {v}
+@msg	`doc` must be a document id (see document.list)	`doc` должен быть идентификатором документа (см. document.list)
+@msg	`ids` must be an array of object ids	`ids` должен быть массивом идентификаторов объектов
+@msg	`look.{key}` must be a colour, "none" or paint params	`look.{key}` должен быть цветом, "none" или параметрами заливки
+@msg	`look` must be an object	`look` должен быть объектом
+@msg	`look`: `{id}` made no object to style	`look`: `{id}` не создал объектов для оформления
+@msg	`maxSize` must be 8..4096 pixels	`maxSize` должен быть от 8 до 4096 пикселей
+@msg	`rect` must be [x, y, width, height] with a positive size	`rect` должен быть [x, y, ширина, высота] с положительным размером
+@msg	no object {v}	нет объекта {v}
+@msg	no open document with id {uid} (see document.list)	нет открытого документа с идентификатором {uid} (см. document.list)
+@msg	those objects have no bounds	у этих объектов нет границ
+@msg	unknown `look` key `{k}` (expected {_1})	неизвестный ключ `look` `{k}` (ожидается {_1})

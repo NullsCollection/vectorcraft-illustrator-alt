@@ -37,6 +37,7 @@ mod layerpanel;
 pub mod library;
 pub mod links;
 mod live;
+pub(crate) mod look;
 pub(crate) mod maskedit;
 pub(crate) mod menucmds;
 pub(crate) mod newart;
@@ -68,6 +69,7 @@ pub(crate) mod slices;
 mod stroke;
 mod style;
 pub mod stylelib;
+mod summary;
 mod swatch;
 pub mod swatchlib;
 pub(crate) mod tabs;
@@ -276,6 +278,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(cut::specs());
         v.extend(halftone::specs());
         v.extend(perspgrid::specs());
+        v.extend(summary::specs());
         v
     })
 }

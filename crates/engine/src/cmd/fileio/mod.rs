@@ -122,7 +122,7 @@ pub fn specs() -> Vec<CommandSpec> {
             has_doc,
             screens::export_for_screens
         ),
-        cmd!(query "command.batch", "Batch", [], None, "{label?, commands: [{command, params}]} run several commands as ONE undo step (one in each document they edit: steps may open, switch, close or revert documents); stops at the first error and rolls everything back, documents included", has_doc, batch::batch),
+        cmd!(query "command.batch", "Batch", [], None, "{label?, commands: [{command, params}] (at most 10000), atomic?: true} run several commands as ONE undo step (one in each document they edit: steps may open, switch, close or revert documents); stops at the first error and rolls everything back, documents included. A param string that is exactly \"$N.path\" (N: 0-based step index) or \"$last.path\" takes that value from an earlier step's result (`{\"ids\": [\"$0.id\"]}`, `\"$2.ids.1\"`); \"$$\" starts a literal \"$\". atomic: false runs each step as its own command and keeps going after a failure → {results: [{ok, result|error}], completed, failed}", has_doc, batch::batch),
         cmd!(
             query "document.formats",
             "File Formats",

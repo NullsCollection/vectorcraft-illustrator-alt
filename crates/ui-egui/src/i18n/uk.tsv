@@ -2405,6 +2405,8 @@
 	Select an image to see its Link Info.	Виберіть зображення, щоб побачити зв’язок.
 	Select an image to trace	Виберіть зображення для трасування
 	Select Anchors	Виділити опорні точки
+	List Documents	Список документів
+	Document Summary	Зведення документа
 	Select Appearance Item	Виділити елемент оформлення
 	Select Art	Виділити малюнок
 	Select art and choose Object › Pattern › Make.	Виділіть малюнок та виберіть «Об’єкт › Візерунок › Створити».
@@ -3810,3 +3812,14 @@ axis	Both	Обидві
 @msg	`{text}`: step {i}'s result has no such value (write $$ for a literal $)	`{text}`: у результаті кроку {i} немає такого значення (щоб написати сам $, введіть $$)
 @msg	`{text}`: there is no step {i} before this one (steps count from 0; write $$ for a literal $)	`{text}`: перед цим кроком немає кроку {i} (кроки рахуються з 0; щоб написати сам $, введіть $$)
 @msg	object ids are non-negative integers, not {v}	ідентифікатори об’єктів — невід’ємні цілі числа, а не {v}
+@msg	`doc` must be a document id (see document.list)	`doc` має бути ідентифікатором документа (див. document.list)
+@msg	`ids` must be an array of object ids	`ids` має бути масивом ідентифікаторів об’єктів
+@msg	`look.{key}` must be a colour, "none" or paint params	`look.{key}` має бути кольором, "none" або параметрами заливки
+@msg	`look` must be an object	`look` має бути об’єктом
+@msg	`look`: `{id}` made no object to style	`look`: `{id}` не створив об’єктів для оформлення
+@msg	`maxSize` must be 8..4096 pixels	`maxSize` має бути від 8 до 4096 пікселів
+@msg	`rect` must be [x, y, width, height] with a positive size	`rect` має бути [x, y, ширина, висота] з додатним розміром
+@msg	no object {v}	немає об’єкта {v}
+@msg	no open document with id {uid} (see document.list)	немає відкритого документа з ідентифікатором {uid} (див. document.list)
+@msg	those objects have no bounds	ці об’єкти не мають меж
+@msg	unknown `look` key `{k}` (expected {_1})	невідомий ключ `look` `{k}` (очікується {_1})

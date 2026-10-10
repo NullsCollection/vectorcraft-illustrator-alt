@@ -2280,6 +2280,8 @@
 	Select All Instances	すべてのインスタンスを選択
 	Select All Unused	未使用項目をすべて選択
 	Select Anchors	アンカーを選択
+	List Documents	ドキュメントの一覧
+	Document Summary	ドキュメントの概要
 	Select Appearance Item	アピアランス項目を選択
 	Select Freeform Point	フリーフォームポイントを選択
 	Select Gradient Stop	グラデーションの分岐点を選択
@@ -3819,3 +3821,14 @@ theme	Appearance	外観
 @msg	`{text}`: step {i}'s result has no such value (write $$ for a literal $)	`{text}`: ステップ {i} の結果にその値はありません ($ そのものを書くには $$ と入力してください)
 @msg	`{text}`: there is no step {i} before this one (steps count from 0; write $$ for a literal $)	`{text}`: この前にステップ {i} はありません (ステップは 0 から数えます。$ そのものを書くには $$ と入力してください)
 @msg	object ids are non-negative integers, not {v}	オブジェクト ID は 0 以上の整数です ({v} は使えません)
+@msg	`doc` must be a document id (see document.list)	`doc` はドキュメント ID でなければなりません（document.list を参照）
+@msg	`ids` must be an array of object ids	`ids` はオブジェクト ID の配列でなければなりません
+@msg	`look.{key}` must be a colour, "none" or paint params	`look.{key}` はカラー、"none"、またはペイントのパラメーターでなければなりません
+@msg	`look` must be an object	`look` はオブジェクトでなければなりません
+@msg	`look`: `{id}` made no object to style	`look`：`{id}` はスタイルを適用するオブジェクトを作成しませんでした
+@msg	`maxSize` must be 8..4096 pixels	`maxSize` は 8〜4096 ピクセルでなければなりません
+@msg	`rect` must be [x, y, width, height] with a positive size	`rect` は正のサイズの [x, y, 幅, 高さ] でなければなりません
+@msg	no object {v}	オブジェクト {v} がありません
+@msg	no open document with id {uid} (see document.list)	ID {uid} の開いているドキュメントがありません（document.list を参照）
+@msg	those objects have no bounds	それらのオブジェクトには境界がありません
+@msg	unknown `look` key `{k}` (expected {_1})	不明な `look` のキー `{k}`（{_1} のいずれか）

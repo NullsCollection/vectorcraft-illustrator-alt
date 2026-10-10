@@ -167,9 +167,9 @@ The older names below remain listed because existing workflows use them.
 |---|---|
 | `command_list` | Optional `filter`, `enabled_only`; returns the command array |
 | `command_run` | `id`, optional `params`; runs the command through the existing backend |
-| `command_batch` | `steps: [{id, params?}]`, optional `stop_on_error` (default true); returns `completed`, `failed`, `results: [{ok, result\|error}]`. Each edit has its own undo step; failures set `isError`. A param string `"$N.path"` or `"$last.path"` takes a value from an earlier step's result (see `run` below) |
+| `command_batch` | `steps: [{id, params?}]`, optional `stop_on_error` (default true); returns `completed`, `failed`, `results: [{ok, result\|error}]`. Each edit has its own undo step; failures set `isError`. A param string `"$N.path"` or `"$last.path"` takes a value from an earlier step's result (see `run` below). With `atomic: true` (and an optional `label`) the steps are **one** undo step and a failing step rolls them all back (`rolledBack: true`): the engine's `command.batch` |
 | `doc_inspect` | Optional `depth`, `childLimit`; same summary as `inspect_document` |
-| `render_preview` | Optional `max_side` (1–4096, default 1024); inline PNG of the first artboard without editing it. Artboards too large to render within the allocation bound return a tool error |
+| `render_preview` | Optional `max_side` (1–4096, default 1024); inline PNG without editing anything: the first artboard, or only the objects `ids` (their bounds plus a margin), or `rect: [x, y, width, height]`; `doc` renders another open document |
 | `ui_inspect`, `ui_screenshot` | Connected desktop state/window capture; tool errors in headless mode |
 
 Every tool declares read-only, destructive, idempotent and open-world hints. File-writing
@@ -332,6 +332,38 @@ their content). `version: 2` or `1` writes a file older VectorCraft versions ope
 compressed), and `preview: true` embeds a PNG of the first artboard, at most 256 px on its longer side. A save writes
 a temporary file and renames it over the old one, so a failed save never damages the file; only the images the
 document uses are written, and document keys written by a newer version are kept.
+
+## Drawing fast (agents)
+
+An agent drawing over MCP or the control port spends its time on round trips and on checking its
+work, not in the engine (a command takes a few milliseconds). Five habits cut both:
+
+1. **One batch per drawing.** `command.batch` (MCP `command_batch` with `atomic: true`) runs any
+   number of steps (up to 10,000) as one undo step and rolls them all back if one fails. A step
+   takes ids from earlier ones: `"$0.id"`, `"$last.ids.0"` (`"$$"` writes a literal `$`).
+2. **Name the targets.** Commands that act on the selection take `ids` (move, rotate, scale,
+   reflect, shear, arrange, align, distribute, group, lock, hide, compound paths, clipping masks,
+   offset path, outline stroke, every Pathfinder command, paint, stroke, transparency…): no
+   `select.set` first, and the selection is left alone unless the command makes something new.
+3. **Style while creating.** `look: {fill, stroke, weight, dash, cap, join, opacity, blend}` on
+   any command that makes objects (`shape.*`, `path.create`, `text.create`…) styles them in the
+   same undo step, without changing the paint new art gets.
+4. **Draw in your own document.** `file.new` returns `doc`; any command (and a batch) takes `doc`
+   to run there without switching the person's tab. `document.list` lists the open documents.
+5. **Check cheaply.** `document.summary` answers in a few lines (counts by kind, bounds,
+   selection, warnings such as `offArtboard`, `emptyPath`, `hidden`); `render_preview` with `ids`
+   and `max_side: 256` shows just what you drew. On the desktop, `ui.inspect` → `display` says
+   whether edges are hidden or Outline view is on before you trust a screenshot.
+
+```json
+{"command": "command.batch", "params": {"doc": 7, "label": "Tag", "commands": [
+  {"command": "path.create", "params": {"d": "M 0 0 L 120 0 L 120 175 L 0 175 Z", "look": {"fill": "#e8234e", "stroke": "none"}}},
+  {"command": "object.path.offsetPath", "params": {"ids": ["$0.id"], "offset": -5}},
+  {"command": "paint.setStroke", "params": {"ids": "$1.ids", "color": "#ffffff"}},
+  {"command": "shape.ellipse", "params": {"x": 54, "y": 12, "width": 12, "height": 12, "look": {"fill": "#ffffff", "stroke": "#9a9a9a"}}},
+  {"command": "object.group", "params": {"ids": ["$0.id", "$1.ids.0", "$3.id"]}}
+]}}
+```
 
 ## Resources
 

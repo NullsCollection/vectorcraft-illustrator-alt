@@ -32,7 +32,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Move…",
             ["Object", "Transform"],
             Some("Cmd+Shift+M"),
-            "{dx, dy, copy?, patterns?: bool (Transform Patterns: pattern fills and strokes transform with the art; default: prefs transformPatternTiles)}",
+            "{ids?: [id…] (default: the selection), dx, dy, copy?, patterns?: bool (Transform Patterns: pattern fills and strokes transform with the art; default: prefs transformPatternTiles)}",
             has_selection,
             move_cmd
         ),
@@ -41,7 +41,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Rotate…",
             ["Object", "Transform"],
             None,
-            "{angle: deg (counter-clockwise), absolute?: bool (angle is the bounding box's new angle, not an amount), origin?: [x,y] (default: the bounding box centre), copy?, patterns?: bool (Transform Patterns: pattern fills and strokes transform with the art; default: prefs transformPatternTiles)} → {ids}",
+            "{ids?: [id…] (default: the selection), angle: deg (counter-clockwise), absolute?: bool (angle is the bounding box's new angle, not an amount), origin?: [x,y] (default: the bounding box centre), copy?, patterns?: bool (Transform Patterns: pattern fills and strokes transform with the art; default: prefs transformPatternTiles)} → {ids}",
             has_selection,
             rotate
         ),
@@ -50,7 +50,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Scale…",
             ["Object", "Transform"],
             None,
-            "{sx: %, sy?: %, origin?: [x,y], copy?, strokes?: bool (Scale Strokes & Effects: stroke weights, dashes and effect distances scale; off keeps them, type strokes included), corners?: bool (Scale Corners: live corner radii scale), patterns?: bool (Transform Patterns: pattern fills and strokes transform with the art; default: prefs transformPatternTiles)} (strokes/corners default to the preferences)",
+            "{ids?: [id…] (default: the selection), sx: %, sy?: %, origin?: [x,y], copy?, strokes?: bool (Scale Strokes & Effects: stroke weights, dashes and effect distances scale; off keeps them, type strokes included), corners?: bool (Scale Corners: live corner radii scale), patterns?: bool (Transform Patterns: pattern fills and strokes transform with the art; default: prefs transformPatternTiles)} (strokes/corners default to the preferences)",
             has_selection,
             scale
         ),
@@ -59,7 +59,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Reflect…",
             ["Object", "Transform"],
             None,
-            "{axis: \"vertical\"|\"horizontal\"|deg, origin?, copy?, patterns?: bool (Transform Patterns: pattern fills and strokes transform with the art; default: prefs transformPatternTiles)}",
+            "{ids?: [id…] (default: the selection), axis: \"vertical\"|\"horizontal\"|deg, origin?, copy?, patterns?: bool (Transform Patterns: pattern fills and strokes transform with the art; default: prefs transformPatternTiles)}",
             has_selection,
             reflect
         ),
@@ -68,7 +68,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Shear…",
             ["Object", "Transform"],
             None,
-            "{angle: deg, axis?: \"horizontal\"|\"vertical\", origin?, copy?, patterns?: bool (Transform Patterns: pattern fills and strokes transform with the art; default: prefs transformPatternTiles)}",
+            "{ids?: [id…] (default: the selection), angle: deg, axis?: \"horizontal\"|\"vertical\", origin?, copy?, patterns?: bool (Transform Patterns: pattern fills and strokes transform with the art; default: prefs transformPatternTiles)}",
             has_selection,
             shear
         ),
@@ -82,37 +82,73 @@ pub fn specs() -> Vec<CommandSpec> {
             has_selection_or_guides,
             nudge
         ),
-        cmd!("object.arrange.bringToFront", "Bring to Front", ["Object", "Arrange"], Some("Cmd+Shift+]"), "{}", has_selection, |s, _| arrange(
-            s,
-            Arrange::Front
-        )),
-        cmd!("object.arrange.bringForward", "Bring Forward", ["Object", "Arrange"], Some("Cmd+]"), "{}", has_selection, |s, _| arrange(
-            s,
-            Arrange::Forward
-        )),
-        cmd!("object.arrange.sendBackward", "Send Backward", ["Object", "Arrange"], Some("Cmd+["), "{}", has_selection, |s, _| arrange(
-            s,
-            Arrange::Backward
-        )),
-        cmd!("object.arrange.sendToBack", "Send to Back", ["Object", "Arrange"], Some("Cmd+Shift+["), "{}", has_selection, |s, _| arrange(
-            s,
-            Arrange::Back
-        )),
+        cmd!(
+            "object.arrange.bringToFront",
+            "Bring to Front",
+            ["Object", "Arrange"],
+            Some("Cmd+Shift+]"),
+            "{ids?: [id…] (default: the selection)}",
+            has_selection,
+            |s, p| arrange(s, p, Arrange::Front)
+        ),
+        cmd!(
+            "object.arrange.bringForward",
+            "Bring Forward",
+            ["Object", "Arrange"],
+            Some("Cmd+]"),
+            "{ids?: [id…] (default: the selection)}",
+            has_selection,
+            |s, p| arrange(s, p, Arrange::Forward)
+        ),
+        cmd!(
+            "object.arrange.sendBackward",
+            "Send Backward",
+            ["Object", "Arrange"],
+            Some("Cmd+["),
+            "{ids?: [id…] (default: the selection)}",
+            has_selection,
+            |s, p| arrange(s, p, Arrange::Backward)
+        ),
+        cmd!(
+            "object.arrange.sendToBack",
+            "Send to Back",
+            ["Object", "Arrange"],
+            Some("Cmd+Shift+["),
+            "{ids?: [id…] (default: the selection)}",
+            has_selection,
+            |s, p| arrange(s, p, Arrange::Back)
+        ),
         cmd!("object.arrange.sendToCurrentLayer", "Send to Current Layer", ["Object", "Arrange"], None, "{}", has_selection, send_to_current_layer),
-        cmd!("object.group", "Group", ["Object"], Some("Cmd+G"), "{} → {id}", has_selection, group),
-        cmd!("object.ungroup", "Ungroup", ["Object"], Some("Cmd+Shift+G"), "{}", has_selection, ungroup),
-        cmd!("object.lock", "Selection", ["Object", "Lock"], Some("Cmd+2"), "{}", has_selection, lock),
+        cmd!("object.group", "Group", ["Object"], Some("Cmd+G"), "{ids?: [id…] (default: the selection)} → {id}", has_selection, group),
+        cmd!("object.ungroup", "Ungroup", ["Object"], Some("Cmd+Shift+G"), "{ids?: [id…] (default: the selection)}", has_selection, ungroup),
+        cmd!("object.lock", "Selection", ["Object", "Lock"], Some("Cmd+2"), "{ids?: [id…] (default: the selection)}", has_selection, lock),
         cmd!("object.unlockAll", "Unlock All", ["Object"], Some("Cmd+Alt+2"), "{}", has_doc, unlock_all),
-        cmd!("object.hide", "Selection", ["Object", "Hide"], Some("Cmd+3"), "{}", has_selection, hide),
+        cmd!("object.hide", "Selection", ["Object", "Hide"], Some("Cmd+3"), "{ids?: [id…] (default: the selection)}", has_selection, hide),
         cmd!("object.showAll", "Show All", ["Object"], Some("Cmd+Alt+3"), "{}", has_doc, show_all),
-        cmd!("object.compoundPath.make", "Make", ["Object", "Compound Path"], Some("Cmd+8"), "{}", has_selection, compound_make),
-        cmd!("object.compoundPath.release", "Release", ["Object", "Compound Path"], Some("Cmd+Alt+Shift+8"), "{}", has_selection, compound_release),
+        cmd!(
+            "object.compoundPath.make",
+            "Make",
+            ["Object", "Compound Path"],
+            Some("Cmd+8"),
+            "{ids?: [id…] (default: the selection)}",
+            has_selection,
+            compound_make
+        ),
+        cmd!(
+            "object.compoundPath.release",
+            "Release",
+            ["Object", "Compound Path"],
+            Some("Cmd+Alt+Shift+8"),
+            "{ids?: [id…] (default: the selection)}",
+            has_selection,
+            compound_release
+        ),
         cmd!(
             "object.clippingMask.make",
             "Make",
             ["Object", "Clipping Mask"],
             Some("Cmd+7"),
-            "{} the topmost selected object (a path, compound path or text, which loses its paint) clips the others: compound holes, even-odd fills and glyph outlines clip as drawn. Paint given to the clipping path later (paint commands with its id) shows: its fill behind the clipped art, its stroke over it → {id} of the clip group",
+            "{ids?: [id…] (default: the selection)} the topmost selected object (a path, compound path or text, which loses its paint) clips the others: compound holes, even-odd fills and glyph outlines clip as drawn. Paint given to the clipping path later (paint commands with its id) shows: its fill behind the clipped art, its stroke over it → {id} of the clip group",
             has_multi,
             clip_make
         ),
@@ -121,7 +157,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Release",
             ["Object", "Clipping Mask"],
             Some("Cmd+Alt+7"),
-            "{} the selected clip groups become plain groups; their clipping path (path, compound path or text) stays, with the paint it has (none unless painted after Make)",
+            "{ids?: [id…] (default: the selection)} the selected clip groups become plain groups; their clipping path (path, compound path or text) stays, with the paint it has (none unless painted after Make)",
             has_selection,
             clip_release
         ),
@@ -159,7 +195,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Align",
             ["Window", "Align"],
             None,
-            "{horizontal?: \"left\"|\"center\"|\"right\", vertical?: \"top\"|\"center\"|\"bottom\", to?: \"selection\"|\"artboard\"|\"key\" (default: the key object when the selection has one, select.key, else the selection), bounds?: \"preview\"|\"geometric\" (default: the Use Preview Bounds preference; preview bounds take in strokes)}",
+            "{ids?: [id…] (default: the selection), horizontal?: \"left\"|\"center\"|\"right\", vertical?: \"top\"|\"center\"|\"bottom\", to?: \"selection\"|\"artboard\"|\"key\" (default: the key object when the selection has one, select.key, else the selection), bounds?: \"preview\"|\"geometric\" (default: the Use Preview Bounds preference; preview bounds take in strokes)}",
             has_selection,
             align
         ),
@@ -168,7 +204,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Distribute",
             ["Window", "Align"],
             None,
-            "{horizontal?: \"left\"|\"center\"|\"right\", vertical?: \"top\"|\"center\"|\"bottom\", bounds?: \"preview\"|\"geometric\" (default: the Use Preview Bounds preference; preview bounds take in strokes)}",
+            "{ids?: [id…] (default: the selection), horizontal?: \"left\"|\"center\"|\"right\", vertical?: \"top\"|\"center\"|\"bottom\", bounds?: \"preview\"|\"geometric\" (default: the Use Preview Bounds preference; preview bounds take in strokes)}",
             has_multi,
             distribute
         ),
@@ -177,7 +213,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Distribute Spacing",
             ["Window", "Align"],
             None,
-            "{axis: \"horizontal\"|\"vertical\", spacing?: pt (the key object, select.key, stays put and the others are spaced from it), bounds?: \"preview\"|\"geometric\" (default: the Use Preview Bounds preference; preview bounds take in strokes)}",
+            "{ids?: [id…] (default: the selection), axis: \"horizontal\"|\"vertical\", spacing?: pt (the key object, select.key, stays put and the others are spaced from it), bounds?: \"preview\"|\"geometric\" (default: the Use Preview Bounds preference; preview bounds take in strokes)}",
             has_multi,
             distribute_spacing
         ),
@@ -186,11 +222,19 @@ pub fn specs() -> Vec<CommandSpec> {
             "Set Bounds",
             [],
             None,
-            "{x?, y?, width?, height?, reference?: 0..8 (9-point grid), proportional?, strokes?, corners?} (Transform panel; width/height and the reference point follow the bounding box, rotated with rotated objects; x, y are page coordinates; with Use Preview Bounds the values measure the visual bounds; strokes/corners as object.scale)",
+            "{ids?: [id…] (default: the selection), x?, y?, width?, height?, reference?: 0..8 (9-point grid), proportional?, strokes?, corners?} (Transform panel; width/height and the reference point follow the bounding box, rotated with rotated objects; x, y are page coordinates; with Use Preview Bounds the values measure the visual bounds; strokes/corners as object.scale)",
             has_selection,
             set_bounds
         ),
-        cmd!("object.expandShape", "Expand Shape", ["Object", "Shape"], None, "{} convert live shapes to plain paths", has_selection, expand_shape),
+        cmd!(
+            "object.expandShape",
+            "Expand Shape",
+            ["Object", "Shape"],
+            None,
+            "{ids?: [id…] (default: the selection)} convert live shapes to plain paths",
+            has_selection,
+            expand_shape
+        ),
         cmd!(
             "object.setLiveShape",
             "Live Shape Properties",
@@ -291,7 +335,7 @@ fn transform(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn move_cmd(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+    let ids = super::edit::targets(s, p)?;
     apply_transform(s, "Move", ids, Affine::translate((f64_or(p, "dx", 0.0), f64_or(p, "dy", 0.0))), p)
 }
 
@@ -314,7 +358,7 @@ fn about(o: Point, a: Affine) -> Affine {
 }
 
 fn rotate(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+    let ids = super::edit::targets(s, p)?;
     let o = origin_of(s, p, &ids)?;
     let mut angle = f64_or(p, "angle", 0.0);
     if bool_or(p, "absolute", false) {
@@ -326,7 +370,7 @@ fn rotate(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn scale(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+    let ids = super::edit::targets(s, p)?;
     let o = origin_of(s, p, &ids)?;
     let sx = f64_req(p, "sx", "object.scale")? / 100.0;
     let sy = f64_or(p, "sy", sx * 100.0) / 100.0;
@@ -337,7 +381,7 @@ fn scale(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn reflect(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+    let ids = super::edit::targets(s, p)?;
     let o = origin_of(s, p, &ids)?;
     let m = match p.get("axis") {
         Some(Value::String(a)) if a == "horizontal" => Affine::scale_non_uniform(1.0, -1.0),
@@ -351,7 +395,7 @@ fn reflect(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn shear(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+    let ids = super::edit::targets(s, p)?;
     let o = origin_of(s, p, &ids)?;
     let t = f64_or(p, "angle", 0.0).clamp(-89.0, 89.0).to_radians().tan();
     let m =
@@ -375,8 +419,8 @@ enum Arrange {
     Back,
 }
 
-fn arrange(s: &mut Session, how: Arrange) -> Result<Value> {
-    let mut ids = selected_roots(s)?;
+fn arrange(s: &mut Session, p: &Value, how: Arrange) -> Result<Value> {
+    let mut ids = super::edit::targets(s, p)?;
     if matches!(how, Arrange::Forward | Arrange::Front) {
         ids.reverse();
     }
@@ -419,8 +463,8 @@ fn arrange(s: &mut Session, how: Arrange) -> Result<Value> {
     ok()
 }
 
-fn send_to_current_layer(s: &mut Session, _: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+fn send_to_current_layer(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = super::edit::targets(s, p)?;
     // Ids are reused after undo: the remembered current layer must still be a layer.
     let st = s.doc()?;
     let layer = st.current_layer().or_else(|| st.doc.default_layer()).ok_or_else(|| EngineError::Other("no current layer".into()))?;
@@ -433,8 +477,8 @@ fn send_to_current_layer(s: &mut Session, _: &Value) -> Result<Value> {
     ok()
 }
 
-fn group(s: &mut Session, _: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+fn group(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = super::edit::targets(s, p)?;
     let gid = s.edit("Group", |d, sel| {
         let gid = group_nodes(d, &ids)?;
         sel.set([gid]);
@@ -455,8 +499,8 @@ pub(crate) fn group_nodes(d: &mut Document, ids: &[NodeId]) -> Result<NodeId> {
     Ok(gid)
 }
 
-fn ungroup(s: &mut Session, _: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+fn ungroup(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = super::edit::targets(s, p)?;
     s.edit("Ungroup", |d, sel| {
         let mut new_sel = vec![];
         for id in &ids {
@@ -490,8 +534,8 @@ fn ungroup(s: &mut Session, _: &Value) -> Result<Value> {
     ok()
 }
 
-fn lock(s: &mut Session, _: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+fn lock(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = super::edit::targets(s, p)?;
     s.edit("Lock", |d, sel| {
         for id in &ids {
             if let Some(n) = d.node_mut(*id) {
@@ -528,8 +572,8 @@ fn unlock_all(s: &mut Session, _: &Value) -> Result<Value> {
     Ok(json!({ "count": ids.len() }))
 }
 
-fn hide(s: &mut Session, _: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+fn hide(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = super::edit::targets(s, p)?;
     s.edit("Hide", |d, sel| {
         for id in &ids {
             if let Some(n) = d.node_mut(*id) {
@@ -556,8 +600,8 @@ fn show_all(s: &mut Session, _: &Value) -> Result<Value> {
     Ok(json!({ "count": ids.len() }))
 }
 
-fn compound_make(s: &mut Session, _: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+fn compound_make(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = super::edit::targets(s, p)?;
     let Some(top) = ids.last().copied() else { return Err(EngineError::Other("nothing selected".into())) };
     let id = s.edit("Make Compound Path", |d, sel| {
         let appearance = d.node(top).map(|n| n.appearance.clone()).unwrap_or_default();
@@ -600,8 +644,8 @@ fn compound_make(s: &mut Session, _: &Value) -> Result<Value> {
     Ok(json!({ "id": id.0 }))
 }
 
-fn compound_release(s: &mut Session, _: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+fn compound_release(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = super::edit::targets(s, p)?;
     s.edit("Release Compound Path", |d, sel| {
         let mut out = vec![];
         for id in &ids {
@@ -658,8 +702,8 @@ pub(super) fn release_clip(d: &mut Document, id: NodeId) {
     }
 }
 
-fn clip_make(s: &mut Session, _: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+fn clip_make(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = super::edit::targets(s, p)?;
     let Some(&top) = ids.last() else { return Err(EngineError::Other("nothing selected".into())) };
     let gid = s.edit("Make Clipping Mask", |d, sel| {
         make_clipping_path(d, top)?;
@@ -676,8 +720,8 @@ fn clip_make(s: &mut Session, _: &Value) -> Result<Value> {
     Ok(json!({ "id": gid.0 }))
 }
 
-fn clip_release(s: &mut Session, _: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+fn clip_release(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = super::edit::targets(s, p)?;
     s.edit("Release Clipping Mask", |d, _| {
         for id in &ids {
             release_clip(d, *id);
@@ -887,7 +931,7 @@ fn reference_rect(s: &Session, p: &Value, ids: &[NodeId], preview: bool) -> Resu
 }
 
 fn align(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+    let ids = super::edit::targets(s, p)?;
     let preview = preview_bounds(s, p, "object.align")?;
     let r = reference_rect(s, p, &ids, preview)?;
     let h = str_param(p, "horizontal");
@@ -927,7 +971,7 @@ fn align(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn distribute(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+    let ids = super::edit::targets(s, p)?;
     let preview = preview_bounds(s, p, "object.distribute")?;
     let mut items = items_bounds(&s.doc()?.doc, &ids, preview);
     let (horiz, key): (bool, fn(&Rect, bool) -> f64) = match (str_param(p, "horizontal"), str_param(p, "vertical")) {
@@ -977,7 +1021,7 @@ fn distribute(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn distribute_spacing(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+    let ids = super::edit::targets(s, p)?;
     let horiz = str_param(p, "axis") != Some("vertical");
     let preview = preview_bounds(s, p, "object.distributeSpacing")?;
     let mut items = items_bounds(&s.doc()?.doc, &ids, preview);
@@ -1020,7 +1064,7 @@ fn distribute_spacing(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn set_bounds(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+    let ids = super::edit::targets(s, p)?;
     let d = &s.doc()?.doc;
     // Sizes are measured square to the bounding box, which a rotation turns with the objects:
     // the math below runs in its frame.
@@ -1061,8 +1105,8 @@ fn set_bounds(s: &mut Session, p: &Value) -> Result<Value> {
     apply_transform(s, "Transform", ids, frame.conjugate(Affine::translate(to - new_rp) * scale), p)
 }
 
-fn expand_shape(s: &mut Session, _: &Value) -> Result<Value> {
-    let ids = selected_roots(s)?;
+fn expand_shape(s: &mut Session, p: &Value) -> Result<Value> {
+    let ids = super::edit::targets(s, p)?;
     s.edit("Expand Shape", |d, _| {
         for id in &ids {
             if let Some(NodeKind::Path { live, .. }) = d.node_mut(*id).map(|n| &mut n.kind) {

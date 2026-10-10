@@ -14,13 +14,37 @@ pub fn specs() -> Vec<CommandSpec> {
             "Rectangle",
             [],
             None,
-            "{x, y, width, height, radius?: pt, rotation?: deg (about centre)} → {id}",
+            "{look?: {fill?, stroke?, weight?, dash?, opacity?…} (styles the new object in the same undo step; see command.batch), x, y, width, height, radius?: pt, rotation?: deg (about centre)} → {id}",
             has_doc,
             rectangle
         ),
-        cmd!("shape.ellipse", "Ellipse", [], None, "{x, y, width, height, rotation?: deg (about centre)} → {id}", has_doc, ellipse),
-        cmd!("shape.polygon", "Polygon", [], None, "{cx, cy, radius, sides=6, rotation?: deg} → {id}", has_doc, polygon),
-        cmd!("shape.star", "Star", [], None, "{cx, cy, radius1, radius2, points=5, rotation?: deg} → {id}", has_doc, star),
+        cmd!(
+            "shape.ellipse",
+            "Ellipse",
+            [],
+            None,
+            "{look?: {fill?, stroke?, weight?, dash?, opacity?…} (styles the new object in the same undo step; see command.batch), x, y, width, height, rotation?: deg (about centre)} → {id}",
+            has_doc,
+            ellipse
+        ),
+        cmd!(
+            "shape.polygon",
+            "Polygon",
+            [],
+            None,
+            "{look?: {fill?, stroke?, weight?, dash?, opacity?…} (styles the new object in the same undo step; see command.batch), cx, cy, radius, sides=6, rotation?: deg} → {id}",
+            has_doc,
+            polygon
+        ),
+        cmd!(
+            "shape.star",
+            "Star",
+            [],
+            None,
+            "{look?: {fill?, stroke?, weight?, dash?, opacity?…} (styles the new object in the same undo step; see command.batch), cx, cy, radius1, radius2, points=5, rotation?: deg} → {id}",
+            has_doc,
+            star
+        ),
         cmd!(
             "shape.flare",
             "Flare",
@@ -30,9 +54,33 @@ pub fn specs() -> Vec<CommandSpec> {
             has_doc,
             flare
         ),
-        cmd!("shape.line", "Line Segment", [], None, "{x1, y1, x2, y2} → {id}", has_doc, line),
-        cmd!("shape.spiral", "Spiral", [], None, "{cx, cy, radius, decay=80 (%), segments=10, clockwise?} → {id}", has_doc, spiral),
-        cmd!("shape.arc", "Arc", [], None, "{x1, y1, x2, y2, closed?} → {id}", has_doc, arc),
+        cmd!(
+            "shape.line",
+            "Line Segment",
+            [],
+            None,
+            "{look?: {fill?, stroke?, weight?, dash?, opacity?…} (styles the new object in the same undo step; see command.batch), x1, y1, x2, y2} → {id}",
+            has_doc,
+            line
+        ),
+        cmd!(
+            "shape.spiral",
+            "Spiral",
+            [],
+            None,
+            "{look?: {fill?, stroke?, weight?, dash?, opacity?…} (styles the new object in the same undo step; see command.batch), cx, cy, radius, decay=80 (%), segments=10, clockwise?} → {id}",
+            has_doc,
+            spiral
+        ),
+        cmd!(
+            "shape.arc",
+            "Arc",
+            [],
+            None,
+            "{look?: {fill?, stroke?, weight?, dash?, opacity?…} (styles the new object in the same undo step; see command.batch), x1, y1, x2, y2, closed?} → {id}",
+            has_doc,
+            arc
+        ),
         cmd!("shape.rectangularGrid", "Rectangular Grid", [], None, "{x, y, width, height, rows=5, columns=5} → {id}", has_doc, rect_grid),
         cmd!("shape.polarGrid", "Polar Grid", [], None, "{x, y, width, height, concentric=5, radial=5} → {id}", has_doc, polar_grid),
         cmd!(
@@ -40,7 +88,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Create Path",
             [],
             None,
-            "{anchors: [{x, y, in?: [x,y], out?: [x,y]}], closed?: bool, d?: SVG path data} → {id}",
+            "{look?: {fill?, stroke?, weight?, dash?, opacity?…} (styles the new object in the same undo step; see command.batch), anchors: [{x, y, in?: [x,y], out?: [x,y]}], closed?: bool, d?: SVG path data} → {id}",
             has_doc,
             path_create
         ),
@@ -58,7 +106,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Create Text",
             [],
             None,
-            "{x, y, text, vertical?: bool = false, size?: pt, font?: family, style?, color?, area?: {width, height, fit?: none|autoHeight|shrinkText, fitMinPercent?}, placeholder?: bool (fill it with placeholder text instead, as the Type tools do with prefs placeholderText), leadingModel?: \"romanBaseline\"|\"emBoxTop\", charAlign?: \"romanBaseline\"|\"emBoxTop\"|\"emBoxCenter\"|\"emBoxBottom\"|\"icfTop\"|\"icfBottom\" (default: emBoxTop and emBoxCenter while the interface is in Japanese, else romanBaseline)} → {id}; new area type gets Auto Size (fit autoHeight) when the autoSizeAreaType preference is on",
+            "{look?: {fill?, stroke?, weight?, dash?, opacity?…} (styles the new object in the same undo step; see command.batch), x, y, text, vertical?: bool = false, size?: pt, font?: family, style?, color?, area?: {width, height, fit?: none|autoHeight|shrinkText, fitMinPercent?}, placeholder?: bool (fill it with placeholder text instead, as the Type tools do with prefs placeholderText), leadingModel?: \"romanBaseline\"|\"emBoxTop\", charAlign?: \"romanBaseline\"|\"emBoxTop\"|\"emBoxCenter\"|\"emBoxBottom\"|\"icfTop\"|\"icfBottom\" (default: emBoxTop and emBoxCenter while the interface is in Japanese, else romanBaseline)} → {id}; new area type gets Auto Size (fit autoHeight) when the autoSizeAreaType preference is on",
             has_doc,
             text_create
         ),

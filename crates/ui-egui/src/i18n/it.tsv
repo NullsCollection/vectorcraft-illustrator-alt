@@ -2413,6 +2413,8 @@
 	Select an image to see its Link Info.	Seleziona un'immagine per vederne le informazioni sul collegamento.
 	Select an image to trace	Seleziona un'immagine da ricalcare
 	Select Anchors	Seleziona punti di ancoraggio
+	List Documents	Elenco documenti
+	Document Summary	Riepilogo documento
 	Select Appearance Item	Seleziona elemento aspetto
 	Select Art	Seleziona grafica
 	Select art and choose Object › Pattern › Make.	Seleziona la grafica e scegli Oggetto › Motivo › Crea.
@@ -3827,3 +3829,14 @@ axis	Both	Entrambi
 @msg	`{text}`: step {i}'s result has no such value (write $$ for a literal $)	`{text}`: il risultato del passaggio {i} non ha questo valore (scrivi $$ per un $ letterale)
 @msg	`{text}`: there is no step {i} before this one (steps count from 0; write $$ for a literal $)	`{text}`: non c’è un passaggio {i} prima di questo (i passaggi si contano da 0; scrivi $$ per un $ letterale)
 @msg	object ids are non-negative integers, not {v}	gli ID oggetto sono interi non negativi, non {v}
+@msg	`doc` must be a document id (see document.list)	`doc` deve essere un id di documento (vedi document.list)
+@msg	`ids` must be an array of object ids	`ids` deve essere un elenco di id di oggetti
+@msg	`look.{key}` must be a colour, "none" or paint params	`look.{key}` deve essere un colore, "none" o parametri di pittura
+@msg	`look` must be an object	`look` deve essere un oggetto
+@msg	`look`: `{id}` made no object to style	`look`: `{id}` non ha creato oggetti a cui applicare lo stile
+@msg	`maxSize` must be 8..4096 pixels	`maxSize` deve essere tra 8 e 4096 pixel
+@msg	`rect` must be [x, y, width, height] with a positive size	`rect` deve essere [x, y, larghezza, altezza] con dimensioni positive
+@msg	no object {v}	nessun oggetto {v}
+@msg	no open document with id {uid} (see document.list)	nessun documento aperto con id {uid} (vedi document.list)
+@msg	those objects have no bounds	questi oggetti non hanno limiti
+@msg	unknown `look` key `{k}` (expected {_1})	chiave `look` sconosciuta `{k}` (previsto {_1})

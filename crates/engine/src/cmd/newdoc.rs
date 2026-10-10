@@ -579,7 +579,8 @@ pub(crate) fn file_new(s: &mut Session, p: &Value) -> Result<Value> {
         s.execute("view.overprintPreview", &json!({ "on": true }))?;
     }
     remember(s, &settings);
-    Ok(json!({ "index": i, "previewMode": settings.preview_mode.id() }))
+    let doc = s.documents().get(i).map(|d| d.uid);
+    Ok(json!({ "index": i, "doc": doc, "previewMode": settings.preview_mode.id() }))
 }
 
 /// Put `settings` first in Recent (one entry per size and units).

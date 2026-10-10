@@ -9,6 +9,7 @@
 pub mod cmd;
 pub mod guard;
 pub mod inspect;
+pub mod render_target;
 pub mod steps;
 mod tooling;
 pub mod units;
@@ -1069,9 +1070,23 @@ impl Session {
     /// Execute a command by id. This is THE entry point for every frontend.
     pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value> {
         let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
-        // Clear's menu needs a selection; an agent supplying explicit targets only needs a
-        // document. The command validates those targets before making any edit.
-        let enabled = if id == "edit.clear" && params.get("ids").is_some() { cmd::has_doc(self) } else { (spec.enabled)(self) };
+        // `doc` aims the request at a document, unless the command takes a `doc` of its own.
+        let own_doc = spec
+            .params
+            .split('→')
+            .next()
+            .is_some_and(|inputs| ["{doc:", "{doc?", "{doc}", " doc:", " doc?", ", doc}"].iter().any(|k| inputs.contains(k)));
+        if let Some(doc) = params.get("doc").filter(|_| !own_doc) {
+            return self.execute_in(doc, id, params);
+        }
+        if let Some(look) = params.get("look") {
+            return self.execute_with_look(id, spec.label, params, look);
+        }
+        // A menu item needs a selection; an agent naming its targets (`ids`) only needs a document,
+        // when the command takes `ids`. The command validates those targets before making any edit.
+        let named = params.get("ids").and_then(Value::as_array).is_some_and(|a| !a.is_empty())
+            && spec.params.split('→').next().is_some_and(|inputs| inputs.contains("ids"));
+        let enabled = if named || (id == "edit.clear" && params.get("ids").is_some()) { cmd::has_doc(self) } else { (spec.enabled)(self) };
         if let Err(why) = enabled {
             return Err(EngineError::Disabled(id.to_string(), why));
         }
@@ -1095,6 +1110,74 @@ impl Session {
             self.after_command();
         }
         Ok(r)
+    }
+
+    /// `doc`: run `id` in the open document with that id (`document.list`) without switching to it:
+    /// the document that was active stays active (an agent draws in its own document while the
+    /// person keeps working in theirs). Inside `command.batch`, `doc` goes on the batch.
+    fn execute_in(&mut self, doc: &Value, id: &str, params: &Value) -> Result<Value> {
+        let uid = doc.as_u64().ok_or_else(|| EngineError::Other("`doc` must be a document id (see document.list)".into()))?;
+        let i = self
+            .docs
+            .iter()
+            .position(|d| d.uid == uid)
+            .ok_or_else(|| EngineError::Other(format!("no open document with id {uid} (see document.list)")))?;
+        let mut rest = params.clone();
+        if let Some(o) = rest.as_object_mut() {
+            o.remove("doc");
+        }
+        let back = self.active.and_then(|a| self.docs.get(a)).map(|d| d.uid);
+        self.active = Some(i);
+        let r = self.execute(id, &rest);
+        // Back to the document that was active, wherever it is now (unless it closed).
+        if let Some(b) = back.and_then(|u| self.docs.iter().position(|d| d.uid == u)) {
+            self.active = Some(b);
+        }
+        r
+    }
+
+    /// `look` ([`cmd::look`]): run `id` without it, then style what it made, as one undo step (or
+    /// as part of the running batch or interaction). Journaled once, `look` included.
+    fn execute_with_look(&mut self, id: &str, label: &str, params: &Value, look: &Value) -> Result<Value> {
+        let mut base = params.clone();
+        if let Some(o) = base.as_object_mut() {
+            o.remove("look");
+        }
+        let own = self.active().is_some_and(|d| d.interaction.is_none());
+        if own {
+            self.begin_interaction(label)?;
+        }
+        let r = self.run_with_look(id, &base, look);
+        if own {
+            match &r {
+                Ok(_) => {
+                    self.remember_pending_paint();
+                    if let Ok(st) = self.doc_mut()
+                        && let Some(it) = st.interaction.take()
+                    {
+                        st.keep_interaction(it);
+                    }
+                    self.journal.push((id.to_string(), params.clone()));
+                }
+                Err(_) => {
+                    // The error that matters is the step's; a failed rollback has nothing left to undo.
+                    let _ = self.cancel_interaction();
+                }
+            }
+        }
+        r
+    }
+
+    fn run_with_look(&mut self, id: &str, base: &Value, look: &Value) -> Result<Value> {
+        let v = self.execute(id, base)?;
+        let ids = cmd::look::made(&v);
+        if ids.is_empty() {
+            return Err(EngineError::Other(format!("`look`: `{id}` made no object to style")));
+        }
+        for (cmd, p) in cmd::look::steps(look, &ids).map_err(EngineError::Other)? {
+            self.execute(cmd, &p)?;
+        }
+        Ok(v)
     }
 
     /// Is the interface in Japanese? Then new type starts with em box top-to-top leading and em
@@ -1388,6 +1471,8 @@ impl Session {
 mod tests;
 #[cfg(test)]
 mod tests_adjust;
+#[cfg(test)]
+mod tests_aidrive;
 #[cfg(test)]
 mod tests_appearance;
 #[cfg(test)]

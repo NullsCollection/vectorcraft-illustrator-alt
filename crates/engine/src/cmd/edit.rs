@@ -23,7 +23,16 @@ pub fn specs() -> Vec<CommandSpec> {
             super::newdoc::file_new
         ),
         cmd!("file.close", "Close", ["File"], Some("Cmd+W"), "{index?}", has_doc, file_close),
-        cmd!("document.activate", "Activate Document", [], None, "{index}", always, doc_activate),
+        cmd!("document.activate", "Activate Document", [], None, "{index} or {doc: id (document.list)}", always, doc_activate),
+        cmd!(
+            query "document.list",
+            "List Documents",
+            [],
+            None,
+            "{} → {documents: [{doc: id (stable while it is open; any command takes `doc` to run there without switching), index, title, active, dirty}]}",
+            always,
+            doc_list
+        ),
         cmd!(query "document.inspect", "Inspect Document", [], None, "{depth?, childLimit?} → layer tree, artboards, selection, history (a sliced tree reports childCount)", has_doc, |s, p| Ok(inspect::document_opts(s, slice_opts(p, "document.inspect")?))),
         cmd!(query "document.node", "Inspect Object", [], None, "{id, summary?: compact summary, depth?: child levels in the summary (default all), childLimit?: children shown per node (default all; a level that shows fewer reports childCount)} → one object", has_doc, doc_node),
         cmd!(query "document.find", "Find Objects", [], None, "{name?: substring of the Layers panel name, kind?: panel label such as Group, Path, Type or Image (exact), text?: substring of type content, limit?: max matches (default 100, 0 counts only)} → {matches: [{id, name, kind, path}], total}", has_doc, doc_find),
@@ -108,8 +117,27 @@ fn file_close(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn doc_activate(s: &mut Session, p: &Value) -> Result<Value> {
-    let i = p.get("index").and_then(Value::as_u64).ok_or_else(|| bad("document.activate", "missing index"))? as usize;
+    let i = match (p.get("doc").and_then(Value::as_u64), p.get("index").and_then(Value::as_u64)) {
+        (Some(uid), _) => s
+            .documents()
+            .iter()
+            .position(|d| d.uid == uid)
+            .ok_or_else(|| bad("document.activate", format!("no open document with id {uid} (see document.list)")))?,
+        (None, Some(i)) => i as usize,
+        (None, None) => return Err(bad("document.activate", "missing index or doc")),
+    };
     if s.set_active(i) { ok() } else { Err(bad("document.activate", "no such document")) }
+}
+
+fn doc_list(s: &mut Session, _: &Value) -> Result<Value> {
+    let active = s.active_index();
+    let docs: Vec<Value> = s
+        .documents()
+        .iter()
+        .enumerate()
+        .map(|(i, d)| json!({"doc": d.uid, "index": i, "title": d.title(), "active": active == Some(i), "dirty": d.is_dirty()}))
+        .collect();
+    Ok(json!({ "documents": docs }))
 }
 
 fn doc_node(s: &mut Session, p: &Value) -> Result<Value> {
@@ -212,6 +240,19 @@ fn redo(s: &mut Session, _: &Value) -> Result<Value> {
 pub(crate) fn selected_roots(s: &Session) -> Result<Vec<NodeId>> {
     let st = s.doc()?;
     Ok(roots_of(&st.doc, st.selection.in_paint_order(&st.doc)))
+}
+
+/// What a command acts on: the objects `ids` when given (each must exist; layers are dropped, and
+/// so are ids inside other given ids), else the selection, as top-level objects in paint order
+/// ([`roots_of`]). Acting on `ids` leaves the selection alone.
+pub(crate) fn targets(s: &Session, p: &Value) -> Result<Vec<NodeId>> {
+    let Some(ids) = ids_param(p, "ids") else { return selected_roots(s) };
+    let st = s.doc()?;
+    if let Some(missing) = ids.iter().find(|id| st.doc.node(**id).is_none()) {
+        return Err(EngineError::NoNode(*missing));
+    }
+    let ordered = st.doc.paint_order(ids.iter().copied());
+    Ok(roots_of(&st.doc, ordered))
 }
 
 /// The top-level objects among `ids` (in paint order): compound-path members stand for their

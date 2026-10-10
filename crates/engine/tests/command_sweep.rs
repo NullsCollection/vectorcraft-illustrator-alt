@@ -639,3 +639,42 @@ fn text_commands_with_junk_params_on_inline_graphics() {
     }
     assert!(failures.is_empty(), "{} failures:\n{}", failures.len(), failures.join("\n"));
 }
+
+/// Commands that take `ids` run with nothing selected when given them (the engine relaxes their
+/// selection gate): with each fixture's art named and the selection empty, every one of them must
+/// return Ok or Err, never panic, never leave an interaction open, never corrupt the tree.
+#[test]
+fn every_ids_command_on_named_art_with_nothing_selected() {
+    let (mut failures, mut probes) = (vec![], 0usize);
+    for fx in Fixture::ALL {
+        let probe_session = fx.session();
+        let Some(st) = probe_session.active() else { continue };
+        let art: Vec<u64> = st.doc.layers.iter().flat_map(|l| l.children().into_iter().flatten()).map(|n| n.id.0).take(3).collect();
+        if art.is_empty() {
+            continue;
+        }
+        for c in command_specs() {
+            if !c.params.split('→').next().is_some_and(|inputs| inputs.contains("ids")) || c.id.starts_with("file.") {
+                continue;
+            }
+            for ids in [&art[..1], &art[..]] {
+                let mut s = fx.session();
+                let _ = s.execute("select.none", &json!({}));
+                let params = json!({ "ids": ids });
+                probes += 1;
+                let r = catch_quiet(|| s.execute(c.id, &params));
+                match r {
+                    Err(msg) => failures.push(format!("PANIC {} {params} [{fx:?}]: {msg}", c.id)),
+                    Ok(_) if s.in_interaction() => failures.push(format!("{} {params} [{fx:?}]: left an interaction open", c.id)),
+                    Ok(_) => {
+                        if let Err(e) = check_session(&s) {
+                            failures.push(format!("{} {params} [{fx:?}]: {e}", c.id));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(probes > 100, "only {probes} probes: the fixtures have no art to name");
+    assert!(failures.is_empty(), "{} failures:\n{}", failures.len(), failures.join("\n"));
+}

@@ -147,3 +147,28 @@ fn batch_steps_refer_to_earlier_results() {
     assert_eq!(p["results"][2]["result"]["id"], p["results"][0]["result"]["id"], "the text, not the selected rectangle");
     assert!(p["results"][3]["error"].as_str().unwrap().contains("$9.id"), "{p}");
 }
+
+/// `atomic: true`: one undo step for all the steps, references between them, and a failing step
+/// rolls the others back.
+#[test]
+fn atomic_batches_are_one_undo_step_and_roll_back() {
+    let mut s = Server::new(Box::new(Headless::with_document()));
+    let count = |s: &mut Server| payload(&call(s, "doc_inspect", json!({})))["layers"][0]["children"].as_array().map_or(0, Vec::len);
+    let steps = json!([
+        {"id":"shape.rectangle","params":{"x":10,"y":20,"width":30,"height":40}},
+        {"id":"paint.setFill","params":{"ids":["$0.id"],"color":"#ff0000"}},
+        {"id":"shape.ellipse","params":{"x":50,"y":20,"width":30,"height":30}}
+    ]);
+    let r = call(&mut s, "command_batch", json!({"steps":steps,"atomic":true,"label":"Two shapes"}));
+    assert_eq!(r["isError"], false, "{r}");
+    let p = payload(&r);
+    assert_eq!((p["completed"].clone(), p["results"].as_array().unwrap().len()), (json!(3), 3));
+    assert_eq!(count(&mut s), 2);
+    call(&mut s, "command_run", json!({"id":"edit.undo"}));
+    assert_eq!(count(&mut s), 0, "one undo step");
+    let bad = json!([{"id":"shape.rectangle","params":{"x":0,"y":0,"width":5,"height":5}}, {"id":"paint.setFill","params":{"ids":["$7.id"],"color":"#00ff00"}}]);
+    let r = call(&mut s, "command_batch", json!({"steps":bad,"atomic":true}));
+    assert_eq!(r["isError"], true, "{r}");
+    assert_eq!(payload(&r)["rolledBack"], true);
+    assert_eq!(count(&mut s), 0, "rolled back");
+}

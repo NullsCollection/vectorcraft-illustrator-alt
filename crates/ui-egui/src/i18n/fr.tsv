@@ -2410,6 +2410,8 @@
 	Select an image to see its Link Info.	Sélectionnez une image pour afficher les informations sur son lien.
 	Select an image to trace	Sélectionnez une image à vectoriser
 	Select Anchors	Sélectionner les points d’ancrage
+	List Documents	Liste des documents
+	Document Summary	Résumé du document
 	Select Appearance Item	Sélectionner un élément d’aspect
 	Select Art	Sélectionner l’illustration
 	Select art and choose Object › Pattern › Make.	Sélectionnez une illustration et choisissez Objet › Motif › Créer.
@@ -3838,3 +3840,14 @@ axis	Both	Les deux
 @msg	`{text}`: step {i}'s result has no such value (write $$ for a literal $)	`{text}` : le résultat de l’étape {i} n’a pas cette valeur (écrivez $$ pour un $ littéral)
 @msg	`{text}`: there is no step {i} before this one (steps count from 0; write $$ for a literal $)	`{text}` : il n’y a pas d’étape {i} avant celle-ci (les étapes sont comptées à partir de 0 ; écrivez $$ pour un $ littéral)
 @msg	object ids are non-negative integers, not {v}	les identifiants d’objet sont des entiers positifs ou nuls, pas {v}
+@msg	`doc` must be a document id (see document.list)	`doc` doit être un identifiant de document (voir document.list)
+@msg	`ids` must be an array of object ids	`ids` doit être une liste d’identifiants d’objets
+@msg	`look.{key}` must be a colour, "none" or paint params	`look.{key}` doit être une couleur, "none" ou des paramètres de peinture
+@msg	`look` must be an object	`look` doit être un objet
+@msg	`look`: `{id}` made no object to style	`look` : `{id}` n’a créé aucun objet à styler
+@msg	`maxSize` must be 8..4096 pixels	`maxSize` doit être compris entre 8 et 4096 pixels
+@msg	`rect` must be [x, y, width, height] with a positive size	`rect` doit être [x, y, largeur, hauteur] avec une taille positive
+@msg	no object {v}	aucun objet {v}
+@msg	no open document with id {uid} (see document.list)	aucun document ouvert avec l’identifiant {uid} (voir document.list)
+@msg	those objects have no bounds	ces objets n’ont pas de limites
+@msg	unknown `look` key `{k}` (expected {_1})	clé `look` inconnue `{k}` (attendu : {_1})

@@ -89,7 +89,20 @@ pub fn inspect(app: &VectorcraftApp, ctx: &egui::Context) -> Value {
         "view": app.view().map(|v| serde_json::to_value(v).unwrap_or_default()),
         "canvasRect": app.canvas_rect.map(|c| json!([c.left(), c.top(), c.width(), c.height()])),
         "window": [r.width(), r.height()],
-        "documents": app.session.documents().iter().map(|d| json!({"title": d.title(), "dirty": d.is_dirty()})).collect::<Vec<_>>(),
+        "documents": app.session.documents().iter().map(|d| json!({"doc": d.uid, "title": d.title(), "dirty": d.is_dirty()})).collect::<Vec<_>>(),
+        // What the canvas shows besides the art: a screenshot can't show selection outlines with
+        // edges hidden, or fills in Outline view.
+        "display": {
+            "edges": app.ui.view.edges,
+            "outline": app.ui.view.outline,
+            "smartGuides": app.ui.view.smart_guides,
+            "boundingBox": app.ui.view.bounding_box,
+            "grid": app.ui.view.grid,
+            "rulers": app.ui.view.rulers,
+            "tool": app.session.tool_id(),
+            "dialog": app.ui.dialog.as_ref().map(|d| d.kind.clone()),
+            "openPanel": app.ui.open_panel.clone(),
+        },
         "activeDocument": app.session.active_index(),
         "perf": {"frameMs": app.perf.frame_ms, "renderMs": app.perf.render_ms, "fps": app.perf.fps},
         "graphicsAdapter": app.graphics_adapter,
@@ -308,10 +321,12 @@ pub fn handle(app: &mut VectorcraftApp, ctx: &egui::Context, req: &ControlReques
             Outcome::Screenshot { path: s("path").map(str::to_string) }
         }
         "ui.render" => {
-            let Some(st) = app.session.active() else { return err("no document") };
-            let doc = st.doc.clone();
-            let Some(r) = doc.artboards.first().map(|a| a.rect) else { return err("no artboard") };
-            let scale = p.get("scale").and_then(Value::as_f64).unwrap_or(1.0);
+            // The art of a document (`doc`), an artboard, objects (`ids`) or an area (`rect`), at
+            // `scale` or fitted into `maxSize` pixels; no canvas overlays, no window needed.
+            let (doc, r, scale) = match vectorcraft_engine::render_target::render_target(&app.session, p) {
+                Ok(t) => t,
+                Err(e) => return err(e),
+            };
             if let Err(e) = vectorcraft_render::raster_size(r, scale) {
                 return err(e);
             }

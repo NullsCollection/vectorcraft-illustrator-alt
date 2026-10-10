@@ -219,11 +219,7 @@ impl Headless {
     }
 
     fn render(&mut self, p: &Value) -> Result<Value, String> {
-        let st = self.session.active().ok_or("no document")?;
-        let doc = st.doc.clone();
-        let idx = p.get("artboard").and_then(Value::as_u64).unwrap_or(0) as usize;
-        let r = doc.artboards.get(idx).map(|a| a.rect).ok_or("no such artboard")?;
-        let scale = p.get("scale").and_then(Value::as_f64).unwrap_or(1.0).clamp(0.01, 16.0);
+        let (doc, r, scale) = vectorcraft_engine::render_target::render_target(&self.session, p)?;
         vectorcraft_render::raster_size(r, scale)?;
         let img = self.renderer.render_region(&doc, r, scale, true);
         let png = img.to_png()?;
