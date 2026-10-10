@@ -2,7 +2,7 @@
 //!
 //! Magic Wand: click an object to select every object with similar attributes. The matching and
 //! its settings (Magic Wand panel) live in the engine's `select.magicWand` command; Shift adds,
-//! Alt subtracts. Lasso: freehand loop selecting anchor points inside it (direct-selection
+//! Alt subtracts. Lasso: freehand loop selecting anchor points (and mesh points) inside it (direct-selection
 //! style); Shift adds, Alt subtracts.
 
 use std::collections::BTreeSet;
@@ -115,7 +115,9 @@ impl Tool for LassoTool {
                     }
                 });
                 hits.retain(|(id, _)| cx.doc.is_editable(*id) && cx.doc.is_visible(*id));
-                let items: Vec<Value> = hits.iter().map(|(id, v)| json!({ "id": id.0, "anchors": anchors_json(v) })).collect();
+                let mut items: Vec<Value> = hits.iter().map(|(id, v)| json!({ "id": id.0, "anchors": anchors_json(v) })).collect();
+                // And the mesh points inside it.
+                items.extend(crate::direct::mesh_points_in(cx, |q| point_in_polygon(&poly, q)));
                 let mode = if sub {
                     "subtract"
                 } else if add {
@@ -190,5 +192,26 @@ mod tests {
         assert_eq!(v["items"][0]["anchors"].as_array().unwrap().len(), 1);
         assert_eq!(v["mode"], "set");
         assert!(point_in_polygon(&[Point::new(0.0, 0.0), Point::new(10.0, 0.0), Point::new(0.0, 10.0)], Point::new(2.0, 2.0)));
+    }
+
+    /// The Lasso takes the mesh points inside its loop too.
+    #[test]
+    fn lasso_selects_mesh_points_inside() {
+        let (mut d, a) = doc_with_rect();
+        let path = d.node(a).and_then(|n| n.path_data().cloned()).unwrap();
+        let m = vectorcraft_doc::GradientMesh::for_path(&path, 2, 2, vectorcraft_color::Color::WHITE, Default::default(), 0.0).unwrap();
+        *d.node_mut(a).unwrap() = vectorcraft_doc::Node::new(a, NodeKind::Mesh(m));
+        let (s, p) = (Selection::default(), paint());
+        let cx = cx(&d, &s, &p);
+        let mut t = LassoTool::default();
+        // Round the centre (150, 150) only.
+        for (k, (x, y)) in [(140.0, 140.0), (160.0, 140.0), (160.0, 160.0), (140.0, 160.0)].into_iter().enumerate() {
+            let kind = if k == 0 { PointerKind::Down } else { PointerKind::Drag };
+            t.pointer(&cx, &PointerEvent::new(kind, x, y));
+        }
+        let a2 = t.pointer(&cx, &PointerEvent::new(PointerKind::Up, 140.0, 160.0));
+        let Action::Exec(c, v) = &a2[0] else { panic!() };
+        assert_eq!(c, "select.anchorsMany");
+        assert_eq!(v["items"], json!([{"id": a.0, "meshPoints": [4]}]));
     }
 }

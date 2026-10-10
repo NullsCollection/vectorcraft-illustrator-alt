@@ -1004,46 +1004,88 @@ impl GradientMesh {
 
     /// Mesh tool Alt-click: delete the mesh lines through point `index` (interior lines only).
     pub fn remove_point_lines(&mut self, index: usize) -> bool {
-        if index >= self.points.len() {
-            return false;
+        self.remove_lines_through(&[index])
+    }
+
+    /// The row and column of point `index` (`None` out of range).
+    pub fn row_col(&self, index: usize) -> Option<(usize, usize)> {
+        let w = self.cols as usize + 1;
+        (self.is_valid() && index < self.points.len()).then(|| (index / w, index % w))
+    }
+
+    /// The indexes of the four corner points of patch (r, c), clockwise from its first point.
+    pub fn patch_corners(&self, r: usize, c: usize) -> Option<[usize; 4]> {
+        (r < self.rows as usize && c < self.cols as usize).then(|| [self.idx(r, c), self.idx(r, c + 1), self.idx(r + 1, c + 1), self.idx(r + 1, c)])
+    }
+
+    /// Delete the interior mesh lines (rows and columns) through the points `indexes`, as the
+    /// Mesh tool's Alt-click does for one point; border lines stay. Whether anything changed.
+    pub fn remove_lines_through(&mut self, indexes: &[usize]) -> bool {
+        let (mut rows, mut cols) = (std::collections::BTreeSet::new(), std::collections::BTreeSet::new());
+        for &i in indexes {
+            let Some((r, c)) = self.row_col(i) else { continue };
+            if r > 0 && r < self.rows as usize {
+                rows.insert(r);
+            }
+            if c > 0 && c < self.cols as usize {
+                cols.insert(c);
+            }
+        }
+        // Highest first, so the lower indexes still name the same lines.
+        for &r in rows.iter().rev() {
+            self.remove_row(r);
+        }
+        for &c in cols.iter().rev() {
+            self.remove_col(c);
+        }
+        !rows.is_empty() || !cols.is_empty()
+    }
+
+    /// Delete interior row `r`: the edges above and below it merge into straight-handled ones.
+    fn remove_row(&mut self, r: usize) {
+        if r == 0 || r >= self.rows as usize {
+            return;
         }
         let w = self.cols as usize + 1;
-        let (r, c) = (index / w, index % w);
-        let mut changed = false;
-        if r > 0 && r < self.rows as usize {
-            // Merge the edges above and below: keep the outer handles.
-            for cc in 0..w {
-                let above = self.idx(r - 1, cc);
-                let below = self.idx(r + 1, cc);
-                let mid = self.idx(r, cc);
-                let (pa, pm, pb) = (self.points[above].p, self.points[mid].p, self.points[below].p);
-                let _ = pm;
-                self.points[above].handles[H_DOWN] = (pb - pa) / 3.0;
-                self.points[below].handles[H_UP] = (pa - pb) / 3.0;
-            }
-            self.points.drain(r * w..(r + 1) * w);
-            self.rows -= 1;
-            changed = true;
+        for cc in 0..w {
+            let (above, below) = (self.idx(r - 1, cc), self.idx(r + 1, cc));
+            let (pa, pb) = (self.points[above].p, self.points[below].p);
+            self.points[above].handles[H_DOWN] = (pb - pa) / 3.0;
+            self.points[below].handles[H_UP] = (pa - pb) / 3.0;
+        }
+        self.points.drain(r * w..(r + 1) * w);
+        self.rows -= 1;
+    }
+
+    /// Delete interior column `c`, as [`Self::remove_row`] does a row.
+    fn remove_col(&mut self, c: usize) {
+        if c == 0 || c >= self.cols as usize {
+            return;
         }
         let w = self.cols as usize + 1;
-        if c > 0 && c < self.cols as usize {
-            let rows = self.rows as usize;
-            for rr in 0..=rows {
-                let (l, rt) = (rr * w + c - 1, rr * w + c + 1);
-                let (pl, pr) = (self.points[l].p, self.points[rt].p);
-                self.points[l].handles[H_RIGHT] = (pr - pl) / 3.0;
-                self.points[rt].handles[H_LEFT] = (pl - pr) / 3.0;
-            }
-            let mut k = 0;
-            self.points.retain(|_| {
-                let keep = k % w != c;
-                k += 1;
-                keep
-            });
-            self.cols -= 1;
-            changed = true;
+        for rr in 0..=self.rows as usize {
+            let (l, rt) = (rr * w + c - 1, rr * w + c + 1);
+            let (pl, pr) = (self.points[l].p, self.points[rt].p);
+            self.points[l].handles[H_RIGHT] = (pr - pl) / 3.0;
+            self.points[rt].handles[H_LEFT] = (pl - pr) / 3.0;
         }
-        changed
+        let mut k = 0;
+        self.points.retain(|_| {
+            let keep = k % w != c;
+            k += 1;
+            keep
+        });
+        self.cols -= 1;
+    }
+}
+
+/// How many points the editable grid of `n` has: a gradient mesh's, or a mesh envelope's (not
+/// while its contents are being edited). `None` for anything else.
+pub fn grid_point_count(n: &Node) -> Option<usize> {
+    match &n.kind {
+        NodeKind::Mesh(m) => Some(m.points.len()),
+        NodeKind::Envelope { kind: EnvelopeKind::Mesh { points, .. }, editing: false, .. } => Some(points.len()),
+        _ => None,
     }
 }
 
@@ -1769,5 +1811,23 @@ mod tests {
         assert!(m.points[i].p.distance(Point::new(30.0, 60.0)) < 0.5, "{:?}", m.points[i].p);
         assert!(m.remove_point_lines(i));
         assert_eq!((m.rows, m.cols), (1, 1));
+    }
+
+    /// Several points at once: each interior row and column through them goes once; border lines
+    /// and out-of-range indexes are left alone.
+    #[test]
+    fn mesh_lines_through_several_points_go_together() {
+        let mut m =
+            GradientMesh::for_path(&shapes::rectangle(Rect::new(0.0, 0.0, 100.0, 100.0)), 4, 4, Color::BLACK, MeshAppearance::Flat, 0.0).unwrap();
+        assert_eq!(m.row_col(m.idx(1, 2)), Some((1, 2)));
+        assert_eq!(m.patch_corners(0, 0), Some([0, 1, 6, 5]));
+        assert_eq!(m.patch_corners(4, 0), None);
+        let corner = m.points.last().map(|q| q.p);
+        // (1, 1) and (1, 3) share row 1; (3, 0) is on the border column.
+        assert!(m.remove_lines_through(&[m.idx(1, 1), m.idx(1, 3), m.idx(3, 0), 999]));
+        assert_eq!((m.rows, m.cols), (2, 2));
+        assert!(m.is_valid());
+        assert_eq!(m.points.last().map(|q| q.p), corner, "the corners stay put");
+        assert!(!m.remove_lines_through(&[0]), "a corner: border lines only");
     }
 }

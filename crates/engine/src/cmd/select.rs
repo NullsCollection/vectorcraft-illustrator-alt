@@ -51,9 +51,18 @@ pub fn specs() -> Vec<CommandSpec> {
             "Select Anchors",
             [],
             None,
-            "{items: [{id, anchors}], mode?: \"set\"|\"add\"|\"toggle\"|\"subtract\" (set by default; add: true is mode add)}: toggle selects the anchors not selected and deselects the others, subtract deselects them; a path left with none leaves the selection",
+            "{items: [{id, anchors} | {id, meshPoints: [index…]}], mode?: \"set\"|\"add\"|\"toggle\"|\"subtract\" (set by default; add: true is mode add)}: toggle selects the anchors not selected and deselects the others, subtract deselects them; a path left with none leaves the selection. `meshPoints` are points of a gradient mesh or mesh envelope (as select.meshPoints)",
             has_doc,
             anchors_many
+        ),
+        cmd!(
+            "select.meshPoints",
+            "Select Mesh Points",
+            [],
+            None,
+            "{id, indexes: [index…] (row-major points of a gradient mesh or mesh envelope), mode?: \"set\"|\"add\"|\"toggle\"|\"subtract\"} direct-select mesh points (the Direct Selection, Mesh and Lasso tools); set with no indexes leaves the mesh selected with no point selected; a mesh left with none by toggle or subtract leaves the selection",
+            has_doc,
+            mesh_points
         ),
         cmd!(
             "select.same.fillColor",
@@ -284,24 +293,91 @@ fn anchors(s: &mut Session, p: &Value) -> Result<Value> {
     ok()
 }
 
-fn anchors_many(s: &mut Session, p: &Value) -> Result<Value> {
-    let items: Vec<(NodeId, BTreeSet<(usize, usize)>)> = p
-        .get("items")
-        .and_then(Value::as_array)
-        .map(|a| a.iter().filter_map(|it| Some((NodeId(it.get("id")?.as_u64()?), parse_refs(it.get("anchors")).into_iter().collect()))).collect())
-        .unwrap_or_default();
-    // `add: true` is the older spelling of mode add.
-    let mode = match str_param(p, "mode") {
-        Some(m @ ("set" | "add" | "toggle" | "subtract")) => m,
-        Some(m) => return Err(bad("select.anchorsMany", format!("unknown mode {m:?}"))),
-        None if bool_or(p, "add", false) => "add",
-        None => "set",
+/// `[index…]` mesh point indexes (malformed entries are left out).
+fn parse_indexes(v: Option<&Value>) -> BTreeSet<usize> {
+    v.and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).map(|i| i as usize).collect()).unwrap_or_default()
+}
+
+/// The `mode` of a point selection (`add: true` is the older spelling of mode add).
+fn point_mode<'a>(p: &'a Value, cmd: &str) -> Result<&'a str> {
+    match str_param(p, "mode") {
+        Some(m @ ("set" | "add" | "toggle" | "subtract")) => Ok(m),
+        Some(m) => Err(bad(cmd, format!("unknown mode {m:?}"))),
+        None if bool_or(p, "add", false) => Ok("add"),
+        None => Ok("set"),
+    }
+}
+
+/// Apply `refs` to the selected points of mesh `id` per `mode` (after a set's clear). A mesh
+/// selected as a whole counts as all its points selected; one left with none leaves the
+/// selection (unless `set` asked for none), one with all of them is selected as a whole.
+fn select_mesh_refs(d: &Document, sel: &mut vectorcraft_doc::Selection, id: NodeId, refs: &BTreeSet<usize>, mode: &str) {
+    let Some(count) = d.node(id).and_then(vectorcraft_doc::live::grid_point_count) else { return };
+    let now: BTreeSet<usize> = match sel.mesh_partial(id) {
+        Some(set) => set.clone(),
+        None if sel.contains(id) => (0..count).collect(),
+        None => BTreeSet::new(),
     };
+    let refs: BTreeSet<usize> = refs.iter().copied().filter(|i| *i < count).collect();
+    let next: BTreeSet<usize> = match mode {
+        "toggle" => now.symmetric_difference(&refs).copied().collect(),
+        "subtract" => now.difference(&refs).copied().collect(),
+        _ => now.union(&refs).copied().collect(),
+    };
+    if next.is_empty() && mode != "set" {
+        sel.remove(id);
+        return;
+    }
+    sel.add(id);
+    if next.len() < count {
+        sel.mesh_points.insert(id, next);
+    } else {
+        sel.mesh_points.remove(&id);
+    }
+}
+
+fn mesh_points(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "select.meshPoints";
+    let id = id_param(p, "id").ok_or_else(|| bad(C, "missing id"))?;
+    if s.doc()?.doc.node(id).and_then(vectorcraft_doc::live::grid_point_count).is_none() {
+        return Err(bad(C, "not a gradient mesh or mesh envelope"));
+    }
+    let refs = parse_indexes(p.get("indexes"));
+    let mode = point_mode(p, C)?;
     s.select(|d, sel| {
         if mode == "set" {
             sel.clear();
         }
-        for (id, refs) in items {
+        select_mesh_refs(d, sel, id, &refs, mode);
+    })?;
+    ok()
+}
+
+fn anchors_many(s: &mut Session, p: &Value) -> Result<Value> {
+    // Each item: a path's anchors, or (with `meshPoints`) a mesh's points.
+    type Item = (NodeId, BTreeSet<(usize, usize)>, Option<BTreeSet<usize>>);
+    let items: Vec<Item> = p
+        .get("items")
+        .and_then(Value::as_array)
+        .map(|a| {
+            a.iter()
+                .filter_map(|it| {
+                    let mesh = it.get("meshPoints").map(|v| parse_indexes(Some(v)));
+                    Some((NodeId(it.get("id")?.as_u64()?), parse_refs(it.get("anchors")).into_iter().collect(), mesh))
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mode = point_mode(p, "select.anchorsMany")?;
+    s.select(|d, sel| {
+        if mode == "set" {
+            sel.clear();
+        }
+        for (id, refs, mesh) in items {
+            if let Some(mesh) = mesh {
+                select_mesh_refs(d, sel, id, &mesh, mode);
+                continue;
+            }
             let all: BTreeSet<(usize, usize)> =
                 d.node(id).and_then(|n| n.path_data()).map(|p| p.anchors().map(|(s, i, _)| (s, i)).collect()).unwrap_or_default();
             // Anything but a path is selected, toggled or deselected as a whole.

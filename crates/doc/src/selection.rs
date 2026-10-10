@@ -16,6 +16,11 @@ pub struct Selection {
     /// Direct-selected anchors per path. A path in `objects` with no entry here is fully selected.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub anchors: BTreeMap<NodeId, BTreeSet<AnchorRef>>,
+    /// Direct-selected points per gradient mesh or mesh envelope, as indexes into its grid's
+    /// points (row-major). A mesh in `objects` with no entry here is selected as a whole; with an
+    /// empty set, it shows its points but none is selected.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub mesh_points: BTreeMap<NodeId, BTreeSet<usize>>,
     /// Key object for Align.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub key: Option<NodeId>,
@@ -52,6 +57,7 @@ impl Selection {
     pub fn clear(&mut self) {
         self.objects.clear();
         self.anchors.clear();
+        self.mesh_points.clear();
         self.key = None;
         self.target = None;
         self.slices.clear();
@@ -77,6 +83,7 @@ impl Selection {
         self.guides.clear();
         self.objects.retain(|x| *x != id);
         self.anchors.remove(&id);
+        self.mesh_points.remove(&id);
         if self.key == Some(id) {
             self.key = None;
         }
@@ -106,10 +113,24 @@ impl Selection {
     pub fn partial(&self, id: NodeId) -> Option<&BTreeSet<AnchorRef>> {
         self.anchors.get(&id)
     }
+    /// The direct-selected points of mesh `id`, when only some of them are selected.
+    pub fn mesh_partial(&self, id: NodeId) -> Option<&BTreeSet<usize>> {
+        self.mesh_points.get(&id)
+    }
+    /// Are some anchors or mesh points direct-selected (rather than whole objects only)?
+    pub fn has_points(&self) -> bool {
+        !self.anchors.is_empty() || self.mesh_points.values().any(|s| !s.is_empty())
+    }
     /// Drop ids that no longer exist or are no longer editable.
     pub fn prune(&mut self, doc: &Document) {
         self.objects.retain(|id| doc.node(*id).is_some());
         self.anchors.retain(|id, _| doc.node(*id).is_some());
+        let objects = &self.objects;
+        self.mesh_points.retain(|id, set| {
+            let Some(n) = doc.node(*id).and_then(crate::live::grid_point_count) else { return false };
+            set.retain(|i| *i < n);
+            objects.contains(id)
+        });
         if self.key.is_some_and(|k| doc.node(k).is_none()) {
             self.key = None;
         }
@@ -174,6 +195,34 @@ mod tests {
         s.set_guides([0, 1]);
         s.prune(&d);
         assert_eq!(s.guides, vec![0]);
+    }
+
+    /// Mesh points go with their mesh: removed, cleared, or pruned once the mesh is gone, isn't
+    /// selected or has fewer points.
+    #[test]
+    fn mesh_points_follow_their_mesh() {
+        let mut d = Document::new(100.0, 100.0);
+        let path = vectorcraft_geom::shapes::rectangle(vectorcraft_geom::Rect::new(0.0, 0.0, 10.0, 10.0));
+        let m = crate::GradientMesh::for_path(&path, 1, 1, vectorcraft_color::Color::WHITE, Default::default(), 0.0).unwrap();
+        let id = d.alloc_id();
+        let l = d.layers[0].id;
+        d.insert(Some(l), 0, crate::Node::new(id, crate::NodeKind::Mesh(m))).unwrap();
+        let mut s = Selection::default();
+        s.set([id]);
+        s.mesh_points.insert(id, [1, 3, 7].into_iter().collect());
+        assert!(s.has_points());
+        s.prune(&d);
+        assert_eq!(s.mesh_partial(id).map(|v| v.iter().copied().collect::<Vec<_>>()), Some(vec![1, 3]), "a 1×1 mesh has 4 points");
+        s.mesh_points.insert(NodeId(999), [0].into_iter().collect());
+        s.prune(&d);
+        assert!(!s.mesh_points.contains_key(&NodeId(999)));
+        s.remove(id);
+        assert!(s.mesh_points.is_empty() && !s.has_points());
+        s.set([id]);
+        s.mesh_points.insert(id, Default::default());
+        assert!(!s.has_points(), "an empty set: the mesh shows, no point is selected");
+        s.clear();
+        assert!(s.mesh_points.is_empty());
     }
 
     #[test]

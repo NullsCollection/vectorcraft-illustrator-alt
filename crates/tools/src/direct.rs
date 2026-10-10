@@ -14,8 +14,10 @@
 //! Both move objects selected as a whole as the Selection tool does, snapping alike.
 //! Both pick the key objects of a blend, and click or drag ruler guides ([`crate::rulerguide`]).
 //! Direct Selection also edits a blend's spine: drag its points (a key object on a point moves
-//! with it) and, once a point is clicked, its handles; and the points of selected gradient meshes
-//! and mesh envelopes and their handles ([`MeshEdit`]). Dragging a corner or an edge of area
+//! with it) and, once a point is clicked, its handles; and the points of gradient meshes and mesh
+//! envelopes, selected or not, and the selected points' handles ([`MeshEdit`]): a click inside a
+//! mesh patch selects its four corners (Alt: the whole mesh), and the marquee takes mesh points
+//! too. Dragging a corner or an edge of area
 //! type's frame reshapes the type area (`text.reshapeArea`): the text reflows at its size.
 //! Dragging the brackets of selected type on a path moves or flips it ([`crate::pathtype`]).
 //!
@@ -33,7 +35,7 @@ use vectorcraft_geom::{Anchor, PathData, Point, Rect};
 use crate::bbox::move_delta;
 use crate::corners::{self, CornerDrag, over_widget};
 use crate::guides::{HandleSnap, PointSnap, Targets};
-use crate::meshedit::MeshEdit;
+use crate::meshedit::{MeshEdit, editable_meshes, grid_of};
 use crate::pathtype::{self, BracketDrag, over_bracket};
 use crate::rulerguide::GuideEdit;
 use crate::select::{MoveSnap, is_area_type, matrix_json};
@@ -345,11 +347,12 @@ impl Tool for DirectSelectionTool {
                     return vec![Action::Begin("Reshape Spine".into())];
                 }
                 self.spine = None;
-                if let Some(g) = self.mesh.hit(cx, &cx.selection.objects, p) {
+                // The selected meshes' points and the selected points' handles come first...
+                let selected: Vec<NodeId> = cx.selection.objects.iter().copied().filter(|id| cx.doc.node(*id).and_then(grid_of).is_some()).collect();
+                if let Some(g) = self.mesh.hit(cx, &selected, p) {
                     self.state = State::Mesh;
-                    return self.mesh.press(g);
+                    return self.mesh.press(cx, g, p, ev.mods.shift);
                 }
-                self.mesh.unfocus();
                 if let Some((id, si, ai, out)) = hit_handle(cx, p, point) {
                     self.state = State::Handle { id, si, ai, out };
                     self.handle_snap = HandleSnap::default();
@@ -374,6 +377,11 @@ impl Tool for DirectSelectionTool {
                     }
                     return vec![];
                 }
+                // ...the other meshes' points after the anchors of paths.
+                if let Some(g) = self.mesh.hit(cx, &editable_meshes(cx), p) {
+                    self.state = State::Mesh;
+                    return self.mesh.press(cx, g, p, ev.mods.shift);
+                }
                 if let Some((id, anchors)) = hit_frame_edge(cx, p, tol) {
                     return self.press_type_area(cx, id, anchors, p, ev.mods.shift);
                 }
@@ -382,6 +390,17 @@ impl Tool for DirectSelectionTool {
                     return out;
                 }
                 if let Some(h) = hit_test(cx.doc, p, cx.hit_options()) {
+                    // Inside a mesh patch: its four corners (Alt picks the whole mesh).
+                    if !ev.mods.alt
+                        && cx.doc.is_editable(h.leaf)
+                        && let Some(corners) = cx.doc.node(h.leaf).and_then(grid_of).and_then(|g| {
+                            let (r, c, ..) = g.locate(p)?;
+                            g.patch_corners(r, c)
+                        })
+                    {
+                        self.state = State::Mesh;
+                        return self.mesh.press_points(cx, h.leaf, &corners, p, p, ev.mods.shift);
+                    }
                     // A segment of a path that isn't selected as a whole: its two anchors get
                     // selected, and dragging it reshapes it if it's curved, else moves it. Alt picks
                     // the whole path (and Alt-drag copies it), as with Group Selection.
@@ -513,7 +532,7 @@ impl Tool for DirectSelectionTool {
                 "object.blend.spine.moveAnchor".into(),
                 json!({"id": id.0, "anchor": anchor, "handle": if out {"out"} else {"in"}, "x": p.x, "y": p.y, "independent": ev.mods.alt}),
             )],
-            (PointerKind::Drag, State::Mesh) => self.mesh.drag_to(p).unwrap_or_default(),
+            (PointerKind::Drag, State::Mesh) => self.mesh.drag_to(cx, p, ev.mods.shift).unwrap_or_default(),
             (PointerKind::Up, State::Mesh) => {
                 self.state = State::Idle;
                 self.mesh.release().unwrap_or_default()
@@ -575,7 +594,8 @@ impl Tool for DirectSelectionTool {
                     }
                 });
                 sel.retain(|(id, _)| cx.doc.is_editable(*id));
-                let items: Vec<Value> = sel.iter().map(|(id, v)| json!({"id": id.0, "anchors": anchors_json(v)})).collect();
+                let mut items: Vec<Value> = sel.iter().map(|(id, v)| json!({"id": id.0, "anchors": anchors_json(v)})).collect();
+                items.extend(mesh_points_in(cx, |q| r.contains(q)));
                 vec![Action::Exec("select.anchorsMany".into(), json!({"items": items, "mode": if toggle { "toggle" } else { "set" }}))]
             }
             _ => vec![],
@@ -587,13 +607,15 @@ impl Tool for DirectSelectionTool {
             State::Corner(c) => c.overlays(cx),
             _ => {
                 let mut out = self.spine_overlays(cx);
-                out.extend(self.mesh.overlays(cx));
                 if !self.group {
                     out.extend(frame_overlays(cx));
                     out.extend(pathtype::overlays(cx));
                 }
                 if matches!(self.state, State::Handle { .. } | State::MoveAnchors { .. } | State::MoveObject { .. }) {
                     out.extend(self.guides.iter().cloned());
+                }
+                if matches!(self.state, State::Mesh) {
+                    out.extend(self.mesh.overlays());
                 }
                 if let Some((id, p)) = self.hover.filter(|_| matches!(self.state, State::Idle)) {
                     out.push(Overlay::Anchor { p, color: cx.doc.layer_color(id), filled: false, size: 8.0 });
@@ -616,14 +638,30 @@ impl Tool for DirectSelectionTool {
 }
 
 /// The anchor within a press's reach of `p` ([`ToolContext::point_tol`]), of a selected path or the
-/// path under `p`: what Highlight anchors on mouse over marks (a press there picks it).
+/// path under `p`, else the mesh point there: what Highlight anchors on mouse over marks (a press
+/// there picks it).
 fn hovered_anchor(cx: &ToolContext, p: Point) -> Option<(NodeId, Point)> {
     let under = hit_test(cx.doc, p, cx.hit_options()).map(|h| h.leaf);
     let tol = cx.point_tol();
-    cx.selection.objects.iter().copied().chain(under).find_map(|id| {
+    let anchor = cx.selection.objects.iter().copied().chain(under).find_map(|id| {
         let path = cx.doc.node(id).and_then(editable_path)?;
         nearest_anchor(&path, p, tol).map(|(.., a)| (id, a))
-    })
+    });
+    anchor.or_else(|| crate::meshedit::point_at(cx, &editable_meshes(cx), p).map(|(id, _, q)| (id, q)))
+}
+
+/// `select.anchorsMany` items for the points of the editable meshes that `inside` accepts
+/// (the Direct Selection marquee's, the Lasso's).
+pub(crate) fn mesh_points_in(cx: &ToolContext, inside: impl Fn(Point) -> bool) -> Vec<Value> {
+    editable_meshes(cx)
+        .into_iter()
+        .filter(|id| cx.doc.is_visible(*id))
+        .filter_map(|id| {
+            let grid = cx.doc.node(id).and_then(grid_of)?;
+            let v: Vec<usize> = grid.points.iter().enumerate().filter(|(_, q)| inside(q.p)).map(|(i, _)| i).collect();
+            (!v.is_empty()).then(|| json!({"id": id.0, "meshPoints": v}))
+        })
+        .collect()
 }
 
 /// The frame anchors of the selected area type, which Direct Selection drags.

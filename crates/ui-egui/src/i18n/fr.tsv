@@ -2333,6 +2333,7 @@
 	Select an image to see its Link Info.	Sélectionnez une image pour afficher les informations sur son lien.
 	Select an image to trace	Sélectionnez une image à vectoriser
 	Select Anchors	Sélectionner les points d’ancrage
+	Select Mesh Points	Sélectionner les points de filet
 	Select Appearance Item	Sélectionner un élément d’aspect
 	Select Art	Sélectionner l’illustration
 	Select art and choose Object › Pattern › Make.	Sélectionnez une illustration et choisissez Objet › Motif › Créer.
@@ -3558,6 +3559,7 @@ axis	Both	Les deux
 @msg	the selection isn't in perspective	la sélection n’est pas en perspective
 @msg	the stroke has no weight	le contour n’a pas d’épaisseur
 @msg	the thumbnail image is malformed	la vignette est mal formée
+@msg	the envelope's mesh is malformed	le filet de l’enveloppe est mal formé
 @msg	the top object must be a path, compound path or text object to use as a clipping mask	l’objet du dessus doit être un tracé, un tracé transparent ou un objet texte pour servir de masque d’écrêtage
 @msg	the {tool} tool has no options	l’outil {tool} n’a pas d’options
 @msg	there are no objects to release	il n’y a aucun objet à libérer

@@ -237,7 +237,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Set Mesh Point Color",
             [],
             None,
-            "{id, index, color, opacity?: 0..1} colour of one mesh point",
+            "{id?, index?|indexes?: [i…], color?, opacity?: 0..1} colour and/or opacity of gradient mesh points: `indexes` (or `index`) of mesh `id`, its selected points with no index, and with no `id` the selected mesh points (every point of a mesh selected as a whole) → {changed: points}",
             has_doc,
             mesh_set_color
         ),
@@ -246,7 +246,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Move Mesh Point",
             [],
             None,
-            "{id, index, x, y, handle?: 0 right|1 left|2 down|3 up} move a point of a gradient mesh or mesh envelope (its handles follow), or with `handle` place that handle end at (x, y)",
+            "{id, index, x, y, handle?: 0 right|1 left|2 down|3 up} move a point of a gradient mesh or mesh envelope (its handles follow), or with `handle` place that handle end at (x, y); path.moveAnchors moves all the selected mesh points by an offset",
             has_doc,
             mesh_move_point
         ),
@@ -255,7 +255,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Add Mesh Line",
             [],
             None,
-            "{id, x, y, color?} add a row and a column through (x, y) to a gradient mesh (new point in `color`) or a mesh envelope → {index}",
+            "{id, x, y, color?} add a row and a column through (x, y) to a gradient mesh (new point in `color`) or a mesh envelope; the new point becomes the selection → {index}",
             has_doc,
             mesh_add_line
         ),
@@ -264,7 +264,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Delete Mesh Point",
             [],
             None,
-            "{id, index} delete the mesh lines through a point of a gradient mesh or mesh envelope",
+            "{id?, index?|indexes?: [i…]} delete the interior mesh lines through points of a gradient mesh or mesh envelope: `indexes` (or `index`) of mesh `id`, its selected points with no index, and with no `id` the selected mesh points (the Delete key); border lines stay → {ids}",
             has_doc,
             mesh_delete_point
         ),
@@ -1347,6 +1347,10 @@ fn mesh_create(s: &mut Session, p: &Value) -> Result<Value> {
             return Err(bad(C, "select a path or compound path"));
         }
         sel.set(out.iter().copied());
+        // The Mesh tool's click: the point it added is selected.
+        if let (Some(i), [id]) = (index, out.as_slice()) {
+            select_mesh_point(sel, *id, i);
+        }
         Ok((out, index))
     })?;
     let mut r = ids_json(&ids);
@@ -1356,24 +1360,81 @@ fn mesh_create(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(r)
 }
 
+/// Run `f` on the grid of `kind`: a gradient mesh's, or with `envelopes` a mesh envelope's (its
+/// points and handles are written back: editing fills in the handles). `None` for anything else.
+pub(crate) fn edit_grid<T>(kind: &mut NodeKind, envelopes: bool, f: impl FnOnce(&mut GradientMesh) -> Result<T>) -> Option<Result<T>> {
+    match kind {
+        NodeKind::Mesh(m) => Some(f(m)),
+        NodeKind::Envelope { kind: EnvelopeKind::Mesh { rows, cols, points, handles }, .. } if envelopes => {
+            let Some(mut m) = live::envelope_grid(*rows, *cols, points, handles) else {
+                return Some(Err(EngineError::Other("the envelope's mesh is malformed".into())));
+            };
+            let r = f(&mut m);
+            if r.is_ok() {
+                (*rows, *cols) = (m.rows, m.cols);
+                *points = m.points.iter().map(|q| q.p).collect();
+                *handles = m.points.iter().map(|q| q.handles).collect();
+            }
+            Some(r)
+        }
+        _ => None,
+    }
+}
+
 /// Run `f` on the gradient mesh `p.id` (one undo step `label`); with `envelopes`, a mesh
-/// envelope's grid too (its points and handles are written back: editing fills in the handles).
+/// envelope's grid too.
 fn with_mesh<T>(s: &mut Session, p: &Value, cmd: &str, label: &str, envelopes: bool, f: impl FnOnce(&mut GradientMesh) -> Result<T>) -> Result<T> {
     let id = id_param(p, "id").ok_or_else(|| bad(cmd, "missing `id`"))?;
     let c = cmd.to_string();
-    s.edit(label, move |d, _| match d.node_mut(id).map(|n| &mut n.kind) {
-        Some(NodeKind::Mesh(m)) => f(m),
-        Some(NodeKind::Envelope { kind: EnvelopeKind::Mesh { rows, cols, points, handles }, .. }) if envelopes => {
-            let mut m = live::envelope_grid(*rows, *cols, points, handles).ok_or_else(|| bad(&c, "the envelope's mesh is malformed"))?;
-            let r = f(&mut m)?;
-            (*rows, *cols) = (m.rows, m.cols);
-            *points = m.points.iter().map(|q| q.p).collect();
-            *handles = m.points.iter().map(|q| q.handles).collect();
-            Ok(r)
-        }
-        Some(_) => Err(bad(&c, if envelopes { "not a gradient mesh or mesh envelope" } else { "not a gradient mesh" })),
-        None => Err(EngineError::NoNode(id)),
+    s.edit(label, move |d, _| {
+        let n = d.node_mut(id).ok_or(EngineError::NoNode(id))?;
+        edit_grid(&mut n.kind, envelopes, f)
+            .unwrap_or_else(|| Err(bad(&c, if envelopes { "not a gradient mesh or mesh envelope" } else { "not a gradient mesh" })))
     })
+}
+
+/// The mesh points a command acts on: `indexes` (or `index`) of mesh `id`; its selected points
+/// with neither; with no `id`, every mesh's selected points, and with `whole` every point of a
+/// mesh selected as a whole. Out-of-range indexes are left out.
+fn mesh_targets(s: &Session, p: &Value, cmd: &str, whole: bool) -> Result<Vec<(NodeId, Vec<usize>)>> {
+    let st = s.doc()?;
+    let count = |id: NodeId| st.doc.node(id).and_then(live::grid_point_count);
+    let given: Option<Vec<usize>> = match (p.get("indexes"), p.get("index")) {
+        (Some(v), _) => {
+            Some(v.as_array().ok_or_else(|| bad(cmd, "`indexes` must be an array"))?.iter().filter_map(Value::as_u64).map(|i| i as usize).collect())
+        }
+        (None, Some(_)) => Some(vec![index_param(p, "index", cmd)?]),
+        (None, None) => None,
+    };
+    let out: Vec<(NodeId, Vec<usize>)> = match id_param(p, "id") {
+        Some(id) => {
+            let n = count(id).ok_or_else(|| bad(cmd, "not a gradient mesh or mesh envelope"))?;
+            let v = match given {
+                Some(v) => v,
+                None => st.selection.mesh_partial(id).map(|set| set.iter().copied().collect()).unwrap_or_default(),
+            };
+            vec![(id, v.into_iter().filter(|i| *i < n).collect())]
+        }
+        None => st
+            .selection
+            .objects
+            .iter()
+            .filter_map(|id| {
+                let n = count(*id)?;
+                let v: Vec<usize> = match st.selection.mesh_partial(*id) {
+                    Some(set) => set.iter().copied().filter(|i| *i < n).collect(),
+                    None if whole => (0..n).collect(),
+                    None => vec![],
+                };
+                Some((*id, v))
+            })
+            .collect(),
+    };
+    let out: Vec<_> = out.into_iter().filter(|(_, v)| !v.is_empty()).collect();
+    if out.is_empty() {
+        return Err(bad(cmd, "select mesh points (or give `id` and `indexes`)"));
+    }
+    Ok(out)
 }
 
 /// The `handle` parameter (0 right, 1 left, 2 down, 3 up), if any.
@@ -1397,23 +1458,42 @@ fn index_param(p: &Value, key: &str, cmd: &str) -> Result<usize> {
 
 fn mesh_set_color(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "object.mesh.setPointColor";
-    let index = index_param(p, "index", C)?;
     let color = p.get("color").and_then(color_value);
     let opacity = p.get("opacity").and_then(Value::as_f64);
     if color.is_none() && opacity.is_none() {
         return Err(bad(C, "missing `color` or `opacity`"));
     }
-    with_mesh(s, p, C, "Mesh Point Color", false, |m| {
-        let pt = m.points.get_mut(index).ok_or_else(|| bad(C, "index out of range"))?;
-        if let Some(c) = color {
-            pt.color = c;
+    let mut targets = mesh_targets(s, p, C, true)?;
+    // Mesh envelopes' points have no colour.
+    let doc = &s.doc()?.doc;
+    targets.retain(|(id, _)| doc.node(*id).is_some_and(is_mesh));
+    if targets.is_empty() {
+        return Err(bad(C, "not a gradient mesh"));
+    }
+    let changed = color_mesh_points(s, &targets, color, opacity)?;
+    Ok(json!({ "changed": changed }))
+}
+
+/// Give the mesh points `targets` (of gradient meshes; envelopes have no colours) `color` and/or
+/// `opacity`, as one undo step → how many points changed.
+pub(crate) fn color_mesh_points(s: &mut Session, targets: &[(NodeId, Vec<usize>)], color: Option<Color>, opacity: Option<f64>) -> Result<usize> {
+    s.edit("Mesh Point Color", |d, _| {
+        let mut changed = 0;
+        for (id, indexes) in targets {
+            let Some(NodeKind::Mesh(m)) = d.node_mut(*id).map(|n| &mut n.kind) else { continue };
+            for i in indexes {
+                let Some(pt) = m.points.get_mut(*i) else { continue };
+                if let Some(c) = color {
+                    pt.color = c;
+                }
+                if let Some(o) = opacity {
+                    pt.opacity = o.clamp(0.0, 1.0) as f32;
+                }
+                changed += 1;
+            }
         }
-        if let Some(o) = opacity {
-            pt.opacity = o.clamp(0.0, 1.0) as f32;
-        }
-        Ok(())
-    })?;
-    ok()
+        Ok(changed)
+    })
 }
 
 fn mesh_move_point(s: &mut Session, p: &Value) -> Result<Value> {
@@ -1432,15 +1512,28 @@ fn mesh_move_point(s: &mut Session, p: &Value) -> Result<Value> {
     ok()
 }
 
+/// Select point `index` of mesh `id` and nothing else (a new mesh point).
+fn select_mesh_point(sel: &mut Selection, id: NodeId, index: usize) {
+    sel.set([id]);
+    sel.mesh_points.insert(id, [index].into_iter().collect());
+}
+
 fn mesh_add_line(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "object.mesh.addLine";
+    let id = id_param(p, "id").ok_or_else(|| bad(C, "missing `id`"))?;
     let q = Point::new(f64_req(p, "x", C)?, f64_req(p, "y", C)?);
     let color = p.get("color").and_then(color_value);
-    let index = with_mesh(s, p, C, "Add Mesh Line", true, |m| {
-        let i = m.add_lines_at(q).ok_or_else(|| bad(C, "point is outside the mesh"))?;
-        if let Some(c) = color {
-            m.points[i].color = c;
-        }
+    let index = s.edit("Add Mesh Line", |d, sel| {
+        let n = d.node_mut(id).ok_or(EngineError::NoNode(id))?;
+        let i = edit_grid(&mut n.kind, true, |m| {
+            let i = m.add_lines_at(q).ok_or_else(|| bad(C, "point is outside the mesh"))?;
+            if let (Some(c), Some(pt)) = (color, m.points.get_mut(i)) {
+                pt.color = c;
+            }
+            Ok(i)
+        })
+        .unwrap_or_else(|| Err(bad(C, "not a gradient mesh or mesh envelope")))?;
+        select_mesh_point(sel, id, i);
         Ok(i)
     })?;
     Ok(json!({ "index": index }))
@@ -1448,11 +1541,46 @@ fn mesh_add_line(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn mesh_delete_point(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "object.mesh.deletePoint";
-    let index = index_param(p, "index", C)?;
-    with_mesh(s, p, C, "Delete Mesh Point", true, |m| {
-        if m.remove_point_lines(index) { Ok(()) } else { Err(bad(C, "only interior mesh lines can be deleted")) }
-    })?;
-    ok()
+    let targets = mesh_targets(s, p, C, false)?;
+    let ids = delete_mesh_points(s, &targets)?;
+    if ids.is_empty() {
+        return Err(bad(C, "only interior mesh lines can be deleted"));
+    }
+    Ok(ids_json(&ids))
+}
+
+/// Delete key with mesh points selected: the interior mesh lines through them go (a selection of
+/// border points only changes nothing).
+pub(crate) fn mesh_delete_selected(s: &mut Session) -> Result<Value> {
+    let targets = mesh_targets(s, &json!({}), "edit.clear", false)?;
+    Ok(ids_json(&delete_mesh_points(s, &targets)?))
+}
+
+/// Delete the interior mesh lines through the points `targets`, as one undo step; the meshes
+/// changed stay selected with no point selected (the indexes moved) → the meshes changed.
+pub(crate) fn delete_mesh_points(s: &mut Session, targets: &[(NodeId, Vec<usize>)]) -> Result<Vec<NodeId>> {
+    // Border points only: nothing to delete, and no undo step.
+    let doc = &s.doc()?.doc;
+    let removes = |id: &NodeId, indexes: &[usize]| {
+        let Some(mut kind) = doc.node(*id).map(|n| n.kind.clone()) else { return false };
+        edit_grid(&mut kind, true, |m| Ok(m.remove_lines_through(indexes))).and_then(|r| r.ok()).unwrap_or(false)
+    };
+    if !targets.iter().any(|(id, ix)| removes(id, ix)) {
+        return Ok(vec![]);
+    }
+    s.edit("Delete Mesh Point", |d, sel| {
+        let mut changed = vec![];
+        for (id, indexes) in targets {
+            let Some(n) = d.node_mut(*id) else { continue };
+            if edit_grid(&mut n.kind, true, |m| Ok(m.remove_lines_through(indexes))).transpose()?.unwrap_or(false) {
+                changed.push(*id);
+                if sel.contains(*id) {
+                    sel.mesh_points.insert(*id, Default::default());
+                }
+            }
+        }
+        Ok(changed)
+    })
 }
 
 fn mesh_expand(s: &mut Session, _: &Value) -> Result<Value> {

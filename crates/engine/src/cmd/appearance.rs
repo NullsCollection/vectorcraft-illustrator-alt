@@ -691,6 +691,23 @@ fn copy_from(s: &mut Session, p: &Value) -> Result<Value> {
     let clicked = id_param(p, "source").ok_or_else(|| bad(C, "missing `source` id"))?;
     let (reverse, append) = (bool_or(p, "reverse", false), bool_or(p, "append", false));
     let attrs = s.prefs.eyedropper.attrs(p).map_err(|e| bad(C, e))?;
+    // Direct-selected mesh points take the clicked object's solid fill colour.
+    if !reverse && !append && ids_param(p, "ids").is_none() && s.doc()?.selection.mesh_points.values().any(|set| !set.is_empty()) {
+        let fill = s.doc()?.doc.node(clicked).ok_or(EngineError::NoNode(clicked))?.appearance.fill_paint();
+        if let Paint::Solid { color, .. } = fill {
+            let targets: Vec<(NodeId, Vec<usize>)> = s
+                .doc()?
+                .selection
+                .mesh_points
+                .iter()
+                .map(|(id, set)| (*id, set.iter().copied().collect()))
+                .filter(|(_, v): &(NodeId, Vec<usize>)| !v.is_empty())
+                .collect();
+            super::live::color_mesh_points(s, &targets, Some(color), None)?;
+            let ids: Vec<NodeId> = targets.iter().map(|(id, _)| *id).collect();
+            return Ok(json!({ "ids": ids.iter().map(|i| i.0).collect::<Vec<_>>() }));
+        }
+    }
     let selected = match ids_param(p, "ids") {
         Some(v) => v,
         None => selected_roots(s)?,

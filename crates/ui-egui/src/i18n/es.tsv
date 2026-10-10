@@ -2336,6 +2336,7 @@
 	Select an image to see its Link Info.	Selecciona una imagen para ver su información de vínculo.
 	Select an image to trace	Selecciona una imagen para calcar
 	Select Anchors	Seleccionar anclas
+	Select Mesh Points	Seleccionar puntos de malla
 	Select Appearance Item	Seleccionar elemento de apariencia
 	Select Art	Seleccionar ilustración
 	Select art and choose Object › Pattern › Make.	Selecciona una ilustración y elige Objeto › Motivo › Crear.
@@ -3561,6 +3562,7 @@ axis	Both	Ambos
 @msg	the selection isn't in perspective	la selección no está en perspectiva
 @msg	the stroke has no weight	el trazo no tiene grosor
 @msg	the thumbnail image is malformed	la miniatura está mal formada
+@msg	the envelope's mesh is malformed	la malla del sobre está mal formada
 @msg	the top object must be a path, compound path or text object to use as a clipping mask	el objeto superior debe ser un trazado, un trazado compuesto o un objeto de texto para usarlo como máscara de recorte
 @msg	the {tool} tool has no options	la herramienta {tool} no tiene opciones
 @msg	there are no objects to release	no hay objetos que soltar

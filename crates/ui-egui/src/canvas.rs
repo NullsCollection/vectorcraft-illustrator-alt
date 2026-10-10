@@ -1203,9 +1203,17 @@ fn node_outline(n: &Node) -> BezPath {
                 bp.extend(lines.to_bezpath());
             }
         }
+        // A gradient mesh shows its mesh lines.
+        NodeKind::Mesh(m) => bp.extend(m.lines().to_bezpath()),
         _ => {}
     });
     bp
+}
+
+/// The tools that show the points of the gradient meshes and mesh envelopes under the pointer:
+/// the selection tools, the Mesh tool and the Lasso (not the Pen, the transform tools…).
+fn shows_mesh_points(tool: &str) -> bool {
+    matches!(tool, "selection" | "directSelection" | "groupSelection" | "mesh" | "lasso")
 }
 
 /// The width of the key object's outline (Align to Key Object), thicker than the selection's.
@@ -1344,7 +1352,7 @@ fn hover_highlight(app: &VectorcraftApp, p: &egui::Painter, xf: &Xf) {
     if !app.ui.view.smart_guides || !app.session.prefs.object_highlighting {
         return;
     }
-    if app.session.tool_busy() || !matches!(app.session.tool_id(), "selection" | "directSelection" | "groupSelection") {
+    if app.session.tool_busy() || !shows_mesh_points(app.session.tool_id()) {
         return;
     }
     let Some(st) = app.session.active() else { return };
@@ -1356,6 +1364,15 @@ fn hover_highlight(app: &VectorcraftApp, p: &egui::Painter, xf: &Xf) {
     if let Some(n) = st.doc.node(id).filter(|n| !too_many_anchors([*n])) {
         let color = c32(st.doc.layer_color(id));
         stroke_path(p, &node_outline(n), xf, Stroke::new(1.5, color));
+        // A mesh shows its points too, hollow: a press on one selects it.
+        let size = HandleLook::of(&app.session.prefs).grow + 5.0;
+        walk_drawn(n, &mut |c| {
+            if let Some(grid) = vectorcraft_tools::meshedit::grid_of(c) {
+                for q in &grid.points {
+                    anchor_square(p, xf.to_screen(q.p), color, false, size);
+                }
+            }
+        });
     }
 }
 
@@ -1551,6 +1568,8 @@ fn selection_overlay(app: &mut VectorcraftApp, p: &egui::Painter, xf: &Xf) {
     let Some(st) = app.session.active() else { return };
     let tool = app.session.tool_id();
     let direct = vectorcraft_tools::catalog::edits_anchors(tool);
+    // The tools that drag the selected mesh points' handles.
+    let mesh_direct = matches!(tool, "directSelection" | "mesh");
     // Selection & Anchor Display › Size (1–7, 3 the default): anchors, handles and the bounding
     // box's handles a point bigger or smaller per step.
     let look = HandleLook::of(&app.session.prefs);
@@ -1581,11 +1600,24 @@ fn selection_overlay(app: &mut VectorcraftApp, p: &egui::Painter, xf: &Xf) {
         let partial = st.selection.partial(*id);
         // Path outlines.
         stroke_path(p, &node_outline(n), xf, Stroke::new(1.0, color));
-        // Anchors (and handles for selected anchors in direct mode); a mesh envelope's points.
+        // Anchors (and handles for selected anchors in direct mode); the points of gradient meshes
+        // and mesh envelopes (filled when selected, with their handles for the tools that drag
+        // them).
         walk_drawn(n, &mut |c| {
-            if let Some((_, Some(grid))) = vectorcraft_doc::live::envelope_overlay(c) {
-                for q in &grid.points {
-                    anchor_square(p, xf.to_screen(q.p), color, false, anchor(direct));
+            if let Some(grid) = vectorcraft_tools::meshedit::grid_of(c) {
+                let points = st.selection.mesh_partial(*id).filter(|_| c.id == *id);
+                for (i, q) in grid.points.iter().enumerate() {
+                    let sel = match points {
+                        Some(set) => set.contains(&i),
+                        None => !mesh_direct || c.id == *id,
+                    };
+                    let sp = xf.to_screen(q.p);
+                    if sel && points.is_some() && mesh_direct {
+                        with_handles += 1;
+                        handles.extend(q.handles.iter().filter(|h| h.hypot() > 1e-6).map(|h| (sp, xf.to_screen(q.p + *h), color)));
+                    }
+                    let fill = if sel && points.is_some() { selected_anchor(color) } else { color };
+                    anchor_square(p, sp, fill, sel, anchor(points.is_some() || mesh_direct));
                 }
                 return;
             }
@@ -2609,6 +2641,38 @@ mod tests {
         let red_dots = |s: &Shape| matches!(s, Shape::Mesh(m) if m.vertices.len() > 40 && m.vertices.iter().all(|v| v.color == red));
         assert!(s.iter().any(red_dots), "the grid's dots");
         assert!(s.iter().any(|s| matches!(s, Shape::Circle(c) if c.fill == green)), "the guide dotted");
+    }
+
+    /// A gradient mesh with a point direct-selected shows all its points (the selected one
+    /// filled, the others hollow) with the Direct Selection and Mesh tools alike, so switching
+    /// between them keeps them; the selected point's handles show with those tools only.
+    #[test]
+    fn mesh_points_show_with_the_point_tools() {
+        let mut app = VectorcraftApp::new(Session::new(), Default::default());
+        app.session.execute("file.new", &json!({"width": 400, "height": 300})).unwrap();
+        let id = app.session.execute("shape.rectangle", &json!({"x": 150, "y": 100, "width": 100, "height": 100})).unwrap()["id"].clone();
+        app.session.execute("select.set", &json!({"ids": [id]})).unwrap();
+        app.session.execute("object.mesh.create", &json!({"rows": 2, "cols": 2})).unwrap();
+        app.session.execute("select.meshPoints", &json!({"id": id, "indexes": [4]})).unwrap();
+        let ctx = egui::Context::default();
+        // (filled points, hollow points, handle ends): points are 5 px squares, a hollow one white.
+        let count = |app: &mut VectorcraftApp| {
+            let s = shapes(app, &ctx);
+            let point = |r: &egui::epaint::RectShape| (r.rect.width() - 5.0).abs() < 1e-3;
+            let squares: Vec<Color32> = s.iter().filter_map(|s| if let Shape::Rect(r) = s { point(r).then_some(r.fill) } else { None }).collect();
+            let filled = squares.iter().filter(|c| **c != Color32::WHITE && **c != Color32::TRANSPARENT).count();
+            let hollow = squares.iter().filter(|c| **c == Color32::WHITE).count();
+            let ends = s.iter().filter(|s| matches!(s, Shape::Circle(c) if c.fill != Color32::TRANSPARENT)).count();
+            (filled, hollow, ends)
+        };
+        for tool in ["directSelection", "mesh"] {
+            app.session.select_tool(tool, app.view_info()).unwrap();
+            assert_eq!(count(&mut app), (1, 8, 4), "{tool}: the centre's four handles");
+        }
+        // The Pen draws the points but not the mesh's handles.
+        app.session.select_tool("pen", app.view_info()).unwrap();
+        let (filled, hollow, ends) = count(&mut app);
+        assert_eq!((filled, hollow, ends), (1, 8, 0));
     }
 
     /// Selection & Anchor Display › Size (#394): anchors and the bounding box's handles grow.

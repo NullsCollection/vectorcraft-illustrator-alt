@@ -2336,6 +2336,7 @@
 	Select an image to see its Link Info.	Seleziona un'immagine per vederne le informazioni sul collegamento.
 	Select an image to trace	Seleziona un'immagine da ricalcare
 	Select Anchors	Seleziona punti di ancoraggio
+	Select Mesh Points	Seleziona punti trama
 	Select Appearance Item	Seleziona elemento aspetto
 	Select Art	Seleziona grafica
 	Select art and choose Object › Pattern › Make.	Seleziona la grafica e scegli Oggetto › Motivo › Crea.
@@ -3561,6 +3562,7 @@ axis	Both	Entrambi
 @msg	the selection isn't in perspective	la selezione non è in prospettiva
 @msg	the stroke has no weight	la traccia non ha spessore
 @msg	the thumbnail image is malformed	l'immagine miniatura non è formata correttamente
+@msg	the envelope's mesh is malformed	la trama della distorsione non è formata correttamente
 @msg	the top object must be a path, compound path or text object to use as a clipping mask	l'oggetto superiore deve essere un tracciato, un tracciato composto o un oggetto di testo da usare come maschera di ritaglio
 @msg	the {tool} tool has no options	lo strumento {tool} non ha opzioni
 @msg	there are no objects to release	non ci sono oggetti da rilasciare

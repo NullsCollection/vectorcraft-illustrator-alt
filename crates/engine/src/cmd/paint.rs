@@ -16,7 +16,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Fill",
             [],
             None,
-            "{color?: \"#rrggbb\"|[r,g,b]|{c,m,y,k}|{gray}|{l,a,b} (CIE Lab), none?: true, swatch?: name (a global or spot colour stays linked, so swatch edits recolour it; a tint swatch links to its base at its tint; a gradient swatch is recorded as the gradient's swatch and fits each object, keeping its aspect; the built-in \"[Registration]\" prints on every plate), tint?: 0..100 (% of a global or spot `swatch`; default 100, or a tint swatch's own), gradient?: {kind?: linear|radial|freeform, stops?: [{offset 0..1, color, opacity? 0..1 (or 0..100), midpoint? 0.13..0.87, swatch?: global or spot colour (or tint) swatch the stop links to (its colour comes from the swatch), tint?: 0..100}] (at least 2; default white→black), angle?: deg, start?: [x,y], end?: [x,y] (the vector in document coordinates, both or neither; type objects keep it in text space), aspect?: % (radial; without start/end the gradient is placed on each object's bounds), focal?: [x,y] (radial, with start/end: the focal point, where the first stop sits), swatch?: linked gradient swatch name}, item?: appearance item index|null (omitted: the Appearance panel's active item if it is a fill, else the top fill), ids?, focus?: true (false keeps the active proxy), keepModel?: false (in a CMYK document, RGB colours and gradient stops are stored as CMYK unless true; Gray stays Gray)} sets the selection's fill and the default (new art fits a gradient to itself)",
+            "{color?: \"#rrggbb\"|[r,g,b]|{c,m,y,k}|{gray}|{l,a,b} (CIE Lab), none?: true, swatch?: name (a global or spot colour stays linked, so swatch edits recolour it; a tint swatch links to its base at its tint; a gradient swatch is recorded as the gradient's swatch and fits each object, keeping its aspect; the built-in \"[Registration]\" prints on every plate), tint?: 0..100 (% of a global or spot `swatch`; default 100, or a tint swatch's own), gradient?: {kind?: linear|radial|freeform, stops?: [{offset 0..1, color, opacity? 0..1 (or 0..100), midpoint? 0.13..0.87, swatch?: global or spot colour (or tint) swatch the stop links to (its colour comes from the swatch), tint?: 0..100}] (at least 2; default white→black), angle?: deg, start?: [x,y], end?: [x,y] (the vector in document coordinates, both or neither; type objects keep it in text space), aspect?: % (radial; without start/end the gradient is placed on each object's bounds), focal?: [x,y] (radial, with start/end: the focal point, where the first stop sits), swatch?: linked gradient swatch name}, item?: appearance item index|null (omitted: the Appearance panel's active item if it is a fill, else the top fill), ids?, focus?: true (false keeps the active proxy), keepModel?: false (in a CMYK document, RGB colours and gradient stops are stored as CMYK unless true; Gray stays Gray)} sets the selection's fill and the default (new art fits a gradient to itself); a solid colour colours a gradient mesh's direct-selected points (all its points when it is selected as a whole)",
             has_doc,
             |s, p| set_paint(s, p, true)
         ),
@@ -162,11 +162,20 @@ impl Session {
     /// new art.
     pub fn proxy_paints(&self) -> (Paint, Paint) {
         let show = |stroke: bool| match self.proxy_source(stroke) {
+            // A gradient mesh with points direct-selected: the first one's colour.
+            Some((n, _)) if !stroke && let Some(c) = self.selected_mesh_point_color(n) => Paint::solid(c),
             Some((n, item)) => proxy_paint(n, stroke, item),
             None if stroke => self.paint.stroke.clone(),
             None => self.paint.fill.clone(),
         };
         (show(false), show(true))
+    }
+
+    /// The colour of the first direct-selected point of gradient mesh `n`, if any.
+    fn selected_mesh_point_color(&self, n: &Node) -> Option<Color> {
+        let NodeKind::Mesh(m) = &n.kind else { return None };
+        let first = self.active()?.selection.mesh_partial(n.id)?.first()?;
+        m.points.get(*first).map(|q| q.color)
     }
 
     /// The object whose fill (or stroke) the proxy shows, with the Appearance panel's active item
@@ -386,7 +395,22 @@ fn apply_paint(s: &mut Session, p: &Value, paint: Paint, fill: bool) -> Result<V
     }
     let item = item_target(s, p, cmd)?.of_kind(s, fill);
     let ids = item.targets(s, p)?;
+    // A solid fill colours a gradient mesh's points: its direct-selected ones, else all of them.
+    let mesh_color = match (&paint, fill) {
+        (Paint::Solid { color, .. }, true) => Some(*color),
+        _ => None,
+    };
+    let mesh_points = s.doc()?.selection.mesh_points.clone();
     edit_items(s, &ids, item, cmd, if fill { "Fill Color" } else { "Stroke Color" }, fill, |n, index| {
+        if let (Some(c), NodeKind::Mesh(m)) = (mesh_color, &mut n.kind) {
+            let only = mesh_points.get(&n.id);
+            for (i, q) in m.points.iter_mut().enumerate() {
+                if only.is_none_or(|set| set.contains(&i)) {
+                    q.color = c;
+                }
+            }
+            return Ok(());
+        }
         if index.is_none()
             && let NodeKind::Text(t) = &mut n.kind
         {

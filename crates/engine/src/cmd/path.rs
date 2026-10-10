@@ -27,7 +27,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Move Anchors",
             [],
             None,
-            "{dx, dy} move direct-selected anchors (whole paths if fully selected)",
+            "{dx, dy} move direct-selected anchors and mesh points (whole objects if fully selected)",
             has_selection,
             move_anchors
         ),
@@ -174,6 +174,20 @@ pub(crate) fn move_anchors(s: &mut Session, p: &Value) -> Result<Value> {
     let _ = scale_strokes;
     s.edit("Move", |doc, _| {
         for id in &sel.objects {
+            // Direct-selected mesh points move alone (their handles with them).
+            if let Some(set) = sel.mesh_partial(*id) {
+                let n = doc.node_mut(*id).ok_or(EngineError::NoNode(*id))?;
+                super::live::edit_grid(&mut n.kind, true, |m| {
+                    for i in set {
+                        if let Some(q) = m.points.get_mut(*i) {
+                            q.p += d;
+                        }
+                    }
+                    Ok(())
+                })
+                .transpose()?;
+                continue;
+            }
             match sel.anchors.get(id) {
                 Some(set) => {
                     let path = path_mut(doc, *id)?;

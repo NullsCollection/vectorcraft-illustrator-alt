@@ -78,7 +78,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Nudge",
             [],
             None,
-            "{dx: -1|0|1, dy: -1|0|1, big?: bool (×10), copy?: bool} arrow-key nudge by the keyboard increment (the selected anchors, else objects, else ruler guides)",
+            "{dx: -1|0|1, dy: -1|0|1, big?: bool (×10), copy?: bool} arrow-key nudge by the keyboard increment (the selected anchors and mesh points, else objects, else ruler guides)",
             has_selection_or_guides,
             nudge
         ),
@@ -299,7 +299,7 @@ fn nudge(s: &mut Session, p: &Value) -> Result<Value> {
     let k = s.prefs.keyboard_increment * if bool_or(p, "big", false) { 10.0 } else { 1.0 };
     let dx = f64_or(p, "dx", 0.0) * k;
     let dy = f64_or(p, "dy", 0.0) * k;
-    if !s.doc()?.selection.anchors.is_empty() {
+    if s.doc()?.selection.has_points() {
         return super::path::move_anchors(s, &json!({ "dx": dx, "dy": dy }));
     }
     if s.doc()?.selection.is_empty() {

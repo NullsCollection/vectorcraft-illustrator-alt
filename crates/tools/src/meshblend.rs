@@ -6,16 +6,17 @@
 //!   Blend Options (dialog `blendOptions`). Clicking empty canvas starts over.
 //! - Mesh: click inside a filled path → `object.mesh.create {ids, at}` (1×1 mesh plus lines through
 //!   the click); click inside a mesh or a mesh envelope → `object.mesh.addLine` (a gradient mesh's
-//!   new point takes the current fill colour unless Shift); drag a mesh point, or a handle of the
-//!   point last clicked → `object.mesh.movePoint` previews ([`MeshEdit`]); Alt-click a mesh point →
-//!   `object.mesh.deletePoint`.
+//!   new point takes the current fill colour unless Shift; the new point is selected); click a
+//!   mesh point → it is selected (Shift adds or removes it) and a drag moves the selected points;
+//!   drag a selected point's handle → `object.mesh.movePoint` ([`MeshEdit`]); Alt-click a mesh
+//!   point → `object.mesh.deletePoint`.
 
 use serde_json::json;
 use vectorcraft_color::Paint;
 use vectorcraft_doc::{NodeId, NodeKind};
 use vectorcraft_geom::Point;
 
-use crate::meshedit::{MeshEdit, grid_of};
+use crate::meshedit::{MeshEdit, editable_meshes, grid_of};
 use crate::{Action, Cursor, Mods, Overlay, PointerEvent, PointerKind, Tool, ToolContext};
 
 const FEEDBACK: [u8; 3] = [0x4f, 0x9d, 0xff];
@@ -146,27 +147,8 @@ pub struct MeshTool {
 }
 
 impl MeshTool {
-    /// Meshes (gradient meshes and mesh envelopes) to consider for point hits: selected ones
-    /// first, then any in the document.
-    fn meshes(cx: &ToolContext) -> Vec<NodeId> {
-        let mut v: Vec<NodeId> = cx.selection.objects.iter().copied().filter(|id| cx.doc.node(*id).and_then(grid_of).is_some()).collect();
-        let mut rest = vec![];
-        cx.doc.walk(|n| {
-            if grid_of(n).is_some() {
-                rest.push(n.id);
-            }
-        });
-        for id in rest.into_iter().rev() {
-            if !v.contains(&id) {
-                v.push(id);
-            }
-        }
-        v.retain(|id| cx.doc.is_editable(*id));
-        v
-    }
-
     fn grab_at(&self, cx: &ToolContext, p: Point) -> Option<crate::meshedit::MeshGrab> {
-        self.edit.hit(cx, &Self::meshes(cx), p)
+        self.edit.hit(cx, &editable_meshes(cx), p)
     }
 }
 
@@ -180,12 +162,10 @@ impl Tool for MeshTool {
             PointerKind::Down => {
                 if let Some(g) = self.grab_at(cx, p) {
                     if ev.mods.alt && g.handle.is_none() {
-                        self.edit.unfocus();
                         return vec![Action::Exec("object.mesh.deletePoint".into(), json!({"id": g.id.0, "index": g.index}))];
                     }
-                    return self.edit.press(g);
+                    return self.edit.press(cx, g, p, ev.mods.shift);
                 }
-                self.edit.unfocus();
                 let Some((top, leaf)) = hit_top(cx, p) else { return vec![] };
                 let color = match (&cx.paint.fill, ev.mods.shift) {
                     (Paint::Solid { color, .. }, false) => Some(color.to_hex()),
@@ -211,23 +191,14 @@ impl Tool for MeshTool {
                 }
                 vec![]
             }
-            PointerKind::Drag => self.edit.drag_to(p).unwrap_or_default(),
+            PointerKind::Drag => self.edit.drag_to(cx, p, ev.mods.shift).unwrap_or_default(),
             PointerKind::Up => self.edit.release().unwrap_or_default(),
             _ => vec![],
         }
     }
-    fn overlays(&self, cx: &ToolContext) -> Vec<Overlay> {
-        let mut out = vec![];
-        for id in &cx.selection.objects {
-            if let Some(NodeKind::Mesh(m)) = cx.doc.node(*id).map(|n| &n.kind) {
-                out.push(Overlay::Path { path: m.lines().to_bezpath(), color: FEEDBACK, width: 1.0, dashed: false });
-                for q in &m.points {
-                    out.push(Overlay::Anchor { p: q.p, color: FEEDBACK, filled: false, size: 5.0 });
-                }
-            }
-        }
-        out.extend(self.edit.overlays(cx));
-        out
+    /// The canvas draws the meshes' lines, points and handles; the tool adds a drag's smart guides.
+    fn overlays(&self, _cx: &ToolContext) -> Vec<Overlay> {
+        self.edit.overlays()
     }
     fn cursor(&self, cx: &ToolContext, p: Point, mods: Mods) -> Cursor {
         match self.grab_at(cx, p) {
@@ -240,7 +211,6 @@ impl Tool for MeshTool {
         self.edit.dragging()
     }
     fn deactivate(&mut self, _cx: &ToolContext) -> Vec<Action> {
-        self.edit.unfocus();
         self.edit.release().unwrap_or_default()
     }
 }
